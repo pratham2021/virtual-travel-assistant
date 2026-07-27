@@ -1,12 +1,14 @@
 import os
 import requests
 from dotenv import load_dotenv
-from datetime import date
+from datetime import date, datetime
 from input_schema import TravelStyle
+from places_client import search_places
 
 load_dotenv()
 
 duffel_token = os.getenv("DUFFEL_ACCESS_TOKEN")
+google_places_api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
 CABIN_CLASS_MAP = {
   TravelStyle.BACKPACKING: "economy",
@@ -74,7 +76,16 @@ def search_flights(origin_airport: str, destination_airport: str, departure_date
             "airline": airline_name,
             "estimated_cost": float(offer["total_amount"]),
         })
-        
-    return simplified_offers
-  
-print(search_flights("AUS", "NRT", date(2026, 8, 15), [35, 8], 2, "economy"))
+    
+    simplified_offers = sorted(simplified_offers, key=lambda offer: offer["estimated_cost"])
+    simplified_offers = simplified_offers[:10]
+    return simplified_offers # Return the 10 cheapest options
+    
+# print(search_flights("AUS", "NRT", date(2026, 8, 15), [35, 8], 2, "economy"))
+# print(get_city_coordinates("Los Angeles"))
+
+
+# Transform raw hotel results into Hotel-shaped dicts (name, city, dates, and a model-estimated price)
+# Wire flights and hotels into generate_itinerary
+# Update SYSTEM_PROMPT with grounding rules for both
+# Update check_budget_compliance to account for flight/hotel costs

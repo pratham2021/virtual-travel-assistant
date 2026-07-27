@@ -45,7 +45,28 @@ def search_places(destination, query_text):
         print(f"Places API error ({response.status_code}): {response.json()}")
         return []
     
-    return response.json().get("places", []) # return the 
+    return response.json().get("places", [])
+
+def search_hotels(city_name: str):
+    url = "https://places.googleapis.com/v1/places:searchText"    
+    
+    headers = {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": google_places_api_key,
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.types"
+    }
+    
+    body = {
+      "textQuery": f"Hotels and accommodation in {city_name}"
+    }
+    
+    response = requests.post(url, headers=headers, json=body)
+    
+    if response.status_code not in (200, 201):
+        print(f"Places API error ({response.status_code}): {response.json()}")
+        return []
+    
+    return response.json().get("places", [])
 
 def get_candidate_venues(preference: Preference) -> dict[str, dict[Interest, list[dict]]]:
     # Each interest represents a genuinely different category of thing the traveler wants
