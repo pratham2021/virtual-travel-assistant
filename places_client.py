@@ -47,38 +47,43 @@ def search_places(destination, query_text):
     
     return response.json().get("places", []) # return the 
 
-def get_candidate_venues(preference: Preference) -> dict[Interest, list[dict]]:
+def get_candidate_venues(preference: Preference) -> dict[str, dict[Interest, list[dict]]]:
     # Each interest represents a genuinely different category of thing the traveler wants
     candidate_venues = {}
-    for interest in preference.interests:
-        query_phrase = INTEREST_QUERY_MAP[interest]
-        results = search_places(preference.destination, query_phrase)
-        candidate_venues[interest] = results
+    for stop in preference.destinations:
+        city_dict = {}
+        for interest in preference.interests:
+            query_phrase = INTEREST_QUERY_MAP[interest]
+            results = search_places(stop.city, query_phrase)
+            city_dict[interest] = results
+        candidate_venues[stop.city] = city_dict
     return candidate_venues
 
 candidate_venues = get_candidate_venues(solo_backpacker)
   
 # places_client.py - add the formatting function (e.g. format_venues_for_prompt(candidate_venues) right after get_candidate_venues)
-def format_venues_for_prompt(candidate_venues: dict[Interest, list[dict]]) -> str:
+def format_venues_for_prompt(candidate_venues: dict[str, dict[Interest, list[dict]]]) -> str:
     lines = []
-
-    for interest, venues in candidate_venues.items():
-        lines.append(interest.value.upper() + ":")
-        trimmed_venues = venues[:8]
+    
+    for city, interest_dict in candidate_venues.items():
+        lines.append(f"=== {city.upper()} ===")
         
-        for venue in trimmed_venues:
-            name = venue["displayName"]["text"]
-            address = venue["formattedAddress"]
-            rating = venue.get("rating", "no rating")
-            line = f"- {name} ({address}) - rating {rating}"
-            lines.append(line)
-        lines.append("")
-    result = "\n".join(lines) 
+        for interest, venues in interest_dict.items():
+            lines.append(f"{interest.value.upper()}:")
+            trimmed_venues = venues[:8]
+            
+            for venue in trimmed_venues:
+                name = venue["displayName"]["text"]
+                address = venue["formattedAddress"]
+                rating = venue.get("rating", "no rating")
+                line = f"- {name} ({address}) - rating {rating}"
+                lines.append(line)
+            lines.append("")
+      
+    result = "\n".join(lines)  
     return result
-
 
 # itinerary_generator.py - update generate_itinerary to import and call get_candidate_venues and your new formatting function, 
 # then combine that text with the serialized preferences into the user message
-
 
 # prompts.py - update SYSTEM_PROMPT with the new instructions about only selecting from provided venues

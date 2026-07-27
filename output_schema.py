@@ -12,15 +12,14 @@ class Activity(BaseModel):
   estimated_cost: int = Field(ge=0)
 
 class Day(BaseModel):
+    city: str
     day_date: date
     theme: str
     activities: List[Activity]
 
 class Itinerary(BaseModel):
     origin: str
-    destination: str
-    start_date: date
-    end_date: date
+    destinations: List[str]
     total_estimated_cost: int
     budget_currency: str
     cost_disclaimer: str
@@ -28,17 +27,16 @@ class Itinerary(BaseModel):
     
     @model_validator(mode='after')
     def check_date_order(self) -> Self:
-        if self.start_date > self.end_date:
-            raise ValueError("The start date cannot be after the end date.")
+        if not self.days:
+            raise ValueError("Itinerary must contain at least one day")
+        for i in range(len(self.days) - 1):    
+            if self.days[i].day_date >= self.days[i+1].day_date:
+                raise ValueError("Days must be in strictly increasing chronological order with no duplicates")
         return self
     
     @model_validator(mode='after')
     def recompute_total_cost(self) -> Self:
         actual_total = sum(activity.estimated_cost for day in self.days for activity in day.activities)
-        if self.total_estimated_cost != actual_total:
-            raise ValueError(
-                f"Total Estimated Cost of ({self.total_estimated_cost}) does not match "
-                f"the sum of activity costs ({actual_total})"
-            )
+        self.total_estimated_cost = actual_total
         return self
     
