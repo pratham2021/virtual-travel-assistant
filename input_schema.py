@@ -50,6 +50,11 @@ class CityStop(BaseModel):
             raise ValueError("The departure date can't be before arrival date")
         return self
 
+# Decide the schema additions
+    # Preference
+        # include_flights:bool
+        # include_hotels: bool
+
 class Preference(BaseModel):
     origin: str
     destinations: List[CityStop]
@@ -67,6 +72,11 @@ class Preference(BaseModel):
     
     hard_constraints: List[str] = []
     soft_preferences: List[str] = []
+    
+    traveler_ages: List[int] = []
+    
+    include_flights: bool = False
+    include_hotels: bool = False
     
     notes: str = ""
     
@@ -91,7 +101,13 @@ class Preference(BaseModel):
         elif self.traveler_type == TravelerType.FRIEND_GROUP:
             if self.group_size < 2:
                 raise ValueError("FRIEND_GROUP must have a group_size of at least 2.")
-        return self 
+        return self
+
+    @model_validator(mode='after')
+    def check_traverler_ages_consistency(self) -> Self:
+        if self.traveler_ages and len(self.traveler_ages) != self.group_size:
+            raise ValueError("The number of travelers must match group size if provided")
+        return self
 
 solo_backpacker = Preference(origin="Austin", destinations=[CityStop(city="Bangkok", arrival_date=date(2026, 7, 26), departure_date=date(2026, 7, 30))], group_size=1, traveler_type=TravelerType.SOLO,
                             budget_amount=500, budget_scope=BudgetScope.TOTAL_TRIP, travel_style=TravelStyle.BACKPACKING, pace=Pace.PACKED, 
@@ -108,3 +124,35 @@ couple_luxury = Preference(origin="San Francisco", destinations=[CityStop(city="
 
 
 
+tight_budget_test = Preference(
+    origin="Austin",
+    destinations=[CityStop(city="Bangkok", arrival_date=date(2026, 7, 26), departure_date=date(2026, 7, 30))],
+    group_size=1,
+    traveler_type=TravelerType.SOLO,
+    budget_amount=10,
+    budget_scope=BudgetScope.TOTAL_TRIP,
+    travel_style=TravelStyle.BACKPACKING,
+    pace=Pace.PACKED,
+    interests=[Interest.NIGHTLIFE, Interest.FOOD, Interest.LOCAL_CULTURE],
+    hard_constraints=[],
+    soft_preferences=["prefers_walking", "avoid_crowds"],
+)
+
+multi_country_test = Preference(
+    origin="Austin",
+    destinations=[
+        CityStop(city="Tokyo", arrival_date=date(2026, 8, 1), departure_date=date(2026, 8, 4)),
+        CityStop(city="Bangkok", arrival_date=date(2026, 8, 4), departure_date=date(2026, 8, 6)),
+        CityStop(city="Rome", arrival_date=date(2026, 8, 6), departure_date=date(2026, 8, 9)),
+    ],
+    group_size=1,
+    traveler_type=TravelerType.SOLO,
+    budget_amount=1300,
+    budget_scope=BudgetScope.TOTAL_TRIP,
+    budget_currency="USD",
+    travel_style=TravelStyle.MID_RANGE,
+    pace=Pace.MODERATE,
+    interests=[Interest.FOOD, Interest.HISTORY],
+    hard_constraints=[],
+    soft_preferences=[],
+)

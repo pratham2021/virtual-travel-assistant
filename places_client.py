@@ -24,7 +24,7 @@ INTEREST_QUERY_MAP = {
 }
 
 def search_places(destination, query_text):
-    # API endpoint that I'm sending requests to
+    # Google Places API endpoint that I'm sending requests to
     url = "https://places.googleapis.com/v1/places:searchText"
     
     # builds the headers dictionary
