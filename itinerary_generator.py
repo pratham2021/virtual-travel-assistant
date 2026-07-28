@@ -2,11 +2,12 @@
 import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from input_schema import Preference, couple_luxury, family_of_four, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
+from input_schema import Preference, couple_luxury, family_of_four, hotel_test, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
 from output_schema import Itinerary
 from prompts import SYSTEM_PROMPT
-from places_client import get_candidate_venues, format_venues_for_prompt
-from datetime import date
+from places_client import get_candidate_venues, format_hotels, format_hotels_for_prompt, format_venues_for_prompt, search_hotels
+from flights_client import CABIN_CLASS_MAP, search_flights, format_flights_for_prompt
+from airport_codes import get_airport_code
 
 load_dotenv() # Load variables from the .env file into the environment
 
@@ -40,6 +41,54 @@ def _generate_itinerary_attempt(preference: Preference, retry_feedback: str = ""
         f"Available real venues (use ONLY these, do not invent alternatives):\n{formatted_venues}"
     )
     
+    candidate_hotels = {}
+    
+    if preference.include_hotels:
+        for stop in preference.destinations:
+            raw_hotels = search_hotels(stop.city)
+            formatted_hotels = format_hotels(raw_hotels, stop.city, stop.arrival_date, stop.departure_date)
+            candidate_hotels[stop.city] = formatted_hotels
+        
+        formatted_hotels_text = format_hotels_for_prompt(candidate_hotels)
+        user_message += f"\n\nAvailable real hotels (use ONLY these, do not invent alternatives):\n{formatted_hotels_text}"    
+    
+    if preference.include_flights:
+        city_sequence = [preference.origin] + [stop.city for stop in preference.destinations]
+        
+        airport_codes = {}
+        for city in city_sequence:
+            if city not in airport_codes:
+                airport_codes[city] = get_airport_code(city)
+                
+        candidate_flights = {}
+    
+        for i in range(len(city_sequence) - 1):
+            origin_city = city_sequence[i]
+            destination_city = city_sequence[i + 1]
+            
+            origin_code = airport_codes[origin_city]
+            destination_code = airport_codes[destination_city]
+            
+            if origin_code is None or destination_code is None:
+                continue
+            
+            departure_date = preference.destinations[i].arrival_date if i == 0 else preference.destinations[i - 1].departure_date
+            
+            flights = search_flights(
+                origin_code,
+                destination_code,
+                departure_date,
+                preference.traveler_ages,
+                preference.group_size,
+                CABIN_CLASS_MAP[preference.travel_style]
+            )
+            
+            leg_label = f"{origin_city} to {destination_city}"
+            candidate_flights[leg_label] = flights
+        
+        formatted_flights_text = format_flights_for_prompt(candidate_flights)
+        user_message += f"\n\nAvailable real flights (use ONLY these, do not invent alternatives):\n{formatted_flights_text}"
+
     if retry_feedback:
         user_message += f"\n\nIMPORTANT: {retry_feedback}"
     
@@ -91,5 +140,7 @@ if __name__ == "__main__":
     
     # origin='San Francisco' destination='Kyoto' start_date=datetime.date(2026, 8, 1) end_date=datetime.date(2026, 8, 8) total_estimated_cost=3320 budget_currency='USD' cost_disclaimer='Costs are estimated based on general knowledge of Kyoto pricing and may vary at time of booking; accommodations and flights are not included in these activity-based estimates.' days=[Day(day_date=datetime.date(2026, 8, 1), theme='Arrival in Gion – Culinary Welcome', activities=[Activity(start_time=datetime.time(15, 0), duration_minutes=90, name="Stroll through Gion's Historic Streets", category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Wander the lantern-lit lanes of Gion, taking in traditional machiya townhouses and teahouses.', estimated_cost=0), Activity(start_time=datetime.time(18, 0), duration_minutes=90, name='Kyoto Gyoza enen Gion Main Branch', category=<Interest.FOOD: 'food'>, description='Savor Kyoto-style gyoza at this highly-rated Gion eatery for a relaxed first dinner.', estimated_cost=70), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name='Hideout KICK Kyoto(Speakeasy Cocktail Bar)', category=<Interest.NIGHTLIFE: 'nightlife'>, description="Unwind with expertly crafted cocktails at this hidden speakeasy tucked above Gion's streets.", estimated_cost=150)]), Day(day_date=datetime.date(2026, 8, 2), theme='Higashiyama Heritage & Gion Nights', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=120, name="Guided Walk Through Higashiyama's Preserved Streets", category=<Interest.ARCHITECTURE: 'architecture'>, description='Explore the stone-paved lanes and centuries-old wooden facades of Higashiyama with a private guide.', estimated_cost=200), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='Leisurely Browsing Near Yasaka Shrine', category=<Interest.SHOPPING: 'shopping'>, description='Pop into small craft and tea shops surrounding the approach to Yasaka Shrine.', estimated_cost=0), Activity(start_time=datetime.time(18, 30), duration_minutes=120, name='Kyoto Wagyu Sukiyaki Shabushabu Tominojo Takumi Gion Shijo Store', category=<Interest.FOOD: 'food'>, description='Indulge in a luxurious wagyu sukiyaki and shabu-shabu dinner in the heart of Gion.', estimated_cost=260), Activity(start_time=datetime.time(21, 0), duration_minutes=120, name='MUSIC BAR universe -GION-', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Enjoy late-night drinks and curated music at this stylish Gion bar.', estimated_cost=140)]), Day(day_date=datetime.date(2026, 8, 3), theme='Nishiki Market & Nakagyo Nightlife', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=120, name='Explore Nishiki Market and Teramachi Shopping Arcade', category=<Interest.SHOPPING: 'shopping'>, description="Browse Kyoto's famed 'kitchen' and covered arcades filled with local delicacies and crafts.", estimated_cost=0), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='GYUKATSU Kyoto Katsugyu Teramachi Kyogoku', category=<Interest.FOOD: 'food'>, description='Try crispy fried Kyoto-style beef cutlets at this popular Nakagyo restaurant.', estimated_cost=90), Activity(start_time=datetime.time(15, 0), duration_minutes=90, name='Wander Pontocho Alley Along the Kamogawa River', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Take a relaxed walk along the narrow, atmospheric alley lined with traditional restaurants.', estimated_cost=0), Activity(start_time=datetime.time(20, 30), duration_minutes=120, name='THE PINK KYOTO', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Dance and mingle at this vibrant Nakagyo nightlife spot.', estimated_cost=160)]), Day(day_date=datetime.date(2026, 8, 4), theme='Wellness & Vegetarian Delights', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=90, name='Private Traditional Tea Ceremony Experience', category=<Interest.WELLNESS: 'wellness'>, description='Participate in an intimate tea ceremony to unwind and reflect in classic Kyoto style.', estimated_cost=250), Activity(start_time=datetime.time(12, 30), duration_minutes=90, name='VOG Kyoto - Vegetarian, Vegan, Gluten Free & Jain Restaurant', category=<Interest.FOOD: 'food'>, description='Enjoy a refined plant-based lunch accommodating a range of dietary preferences.', estimated_cost=100), Activity(start_time=datetime.time(15, 0), duration_minutes=90, name='Leisurely Walk Along the Kamo River Promenade', category=<Interest.NATURE: 'nature'>, description='Stroll along the riverside paths popular with locals for relaxation.', estimated_cost=0), Activity(start_time=datetime.time(20, 30), duration_minutes=150, name='Nightclub 【KITSUNE KYOTO】', category=<Interest.NIGHTLIFE: 'nightlife'>, description="Dance the night away at one of Kyoto's most stylish nightclubs.", estimated_cost=170)]), Day(day_date=datetime.date(2026, 8, 5), theme='Art, Boutiques & Late-Night Cocktails', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=120, name='Browse Boutique Shops and Art Galleries in Nakagyo', category=<Interest.ART: 'art'>, description="Discover small galleries and design boutiques tucked into Nakagyo's backstreets.", estimated_cost=0), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='The Wagyu Burger by PANGA | Kyoto halal restaurant', category=<Interest.FOOD: 'food'>, description='Bite into a gourmet halal wagyu burger at this acclaimed Nakagyo spot.', estimated_cost=100), Activity(start_time=datetime.time(15, 30), duration_minutes=90, name='Traditional Foot Bath and Spa Experience', category=<Interest.WELLNESS: 'wellness'>, description='Relax with a soothing foot bath and massage treatment at a local spa.', estimated_cost=220), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name="L'Escamoteur", category=<Interest.NIGHTLIFE: 'nightlife'>, description='Sip creative cocktails in an intimate, speakeasy-style setting.', estimated_cost=150)]), Day(day_date=datetime.date(2026, 8, 6), theme='Shimogyo Serenity & Nightlife Double Feature', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=120, name="Morning Stroll Through Shimogyo's Quiet Temple Lanes", category=<Interest.HISTORY: 'history'>, description='Wander past small neighborhood temples and shrines away from the crowds.', estimated_cost=0), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='KAWARAMACHI BEEF-TEI', category=<Interest.FOOD: 'food'>, description='Feast on premium Kyoto beef at this celebrated Nakagyo restaurant.', estimated_cost=180), Activity(start_time=datetime.time(16, 0), duration_minutes=90, name='Hotel Onsen and Spa Relaxation', category=<Interest.RELAXATION: 'relaxation'>, description='Recharge with a private soak and spa treatment before an evening out.', estimated_cost=300), Activity(start_time=datetime.time(20, 0), duration_minutes=100, name='WORLD KYOTO', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Start the night with music and drinks at this popular Shimogyo venue.', estimated_cost=130), Activity(start_time=datetime.time(22, 0), duration_minutes=100, name='Back Alley Kyoto', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Continue the evening one floor up in the same building at this cozy late-night bar.', estimated_cost=120)]), Day(day_date=datetime.date(2026, 8, 7), theme='Crafts, Halal Cuisine & Farewell Cocktails', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=120, name='Visit Traditional Crafts Workshops in Nakagyo', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Watch artisans at work producing traditional Kyoto crafts.', estimated_cost=80), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='Halal Ramen Honolu Premier Kyoto Nishiki', category=<Interest.FOOD: 'food'>, description='Enjoy a bowl of rich halal-certified ramen near Nishiki Market.', estimated_cost=70), Activity(start_time=datetime.time(15, 30), duration_minutes=90, name='Relaxing Walk Through Nishiki Tenmangu Area Gardens', category=<Interest.NATURE: 'nature'>, description='Take in peaceful greenery just steps from the bustling market district.', estimated_cost=0), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name='Bar TRENCH Kyoto', category=<Interest.NIGHTLIFE: 'nightlife'>, description='End the evening with expertly mixed cocktails at this intimate Shimogyo bar.', estimated_cost=140)]), Day(day_date=datetime.date(2026, 8, 8), theme='Kamigyo Farewell', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=90, name='Morning Walk Near the Kyoto Imperial Palace in Kamigyo', category=<Interest.HISTORY: 'history'>, description='Take a final peaceful walk through the historic streets surrounding the Imperial Palace grounds.', estimated_cost=0), Activity(start_time=datetime.time(12, 0), duration_minutes=90, name='New Delhi Indian Restaurant(original)', category=<Interest.FOOD: 'food'>, description='Enjoy a farewell lunch of flavorful Indian cuisine before departure.', estimated_cost=90), Activity(start_time=datetime.time(14, 0), duration_minutes=60, name='Last-Minute Souvenir Shopping', category=<Interest.SHOPPING: 'shopping'>, description="Pick up final gifts and mementos from Kyoto's specialty shops.", estimated_cost=150), Activity(start_time=datetime.time(16, 0), duration_minutes=60, name='Relax at Your Accommodation Before Departure', category=<Interest.RELAXATION: 'relaxation'>, description='Unwind in comfort before heading to the airport for your flight home.', estimated_cost=0)])]
     
-    multi_country_test_itinerary = generate_itinerary(multi_country_test)
-    print(multi_country_test_itinerary)
+    # multi_country_test_itinerary = generate_itinerary(multi_country_test)
+    # print(multi_country_test_itinerary)
+    hotel_test_itinerary = generate_itinerary(hotel_test)
+    print(hotel_test_itinerary)

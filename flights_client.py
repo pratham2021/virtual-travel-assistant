@@ -3,7 +3,8 @@ import requests
 from dotenv import load_dotenv
 from datetime import date, datetime
 from input_schema import TravelStyle
-from places_client import search_places
+from places_client import search_places, get_city_coordinates
+from airport_codes import get_airport_code
 
 load_dotenv()
 
@@ -36,7 +37,6 @@ def search_flights(origin_airport: str, destination_airport: str, departure_date
       "Content-Type": "application/json", # we're telling the API we're sending JSON data
       "Accept": "application/json" # we're requesting for the aPI to send data back as JSON
     }
-    
 
     body = {
         "data": {
@@ -80,12 +80,18 @@ def search_flights(origin_airport: str, destination_airport: str, departure_date
     simplified_offers = sorted(simplified_offers, key=lambda offer: offer["estimated_cost"])
     simplified_offers = simplified_offers[:10]
     return simplified_offers # Return the 10 cheapest options
-    
-# print(search_flights("AUS", "NRT", date(2026, 8, 15), [35, 8], 2, "economy"))
-# print(get_city_coordinates("Los Angeles"))
-
-
-# Transform raw hotel results into Hotel-shaped dicts (name, city, dates, and a model-estimated price)
-# Wire flights and hotels into generate_itinerary
-# Update SYSTEM_PROMPT with grounding rules for both
-# Update check_budget_compliance to account for flight/hotel costs
+  
+def format_flights_for_prompt(candidate_flights: dict[str, list[dict]]) -> str:
+    lines = []
+    for leg_label, flights in candidate_flights.items():
+        lines.append(f"=== {leg_label.upper()} ===")
+        for flight in flights:
+            airline = flight["airline"]
+            departure = flight["departure_datetime"]
+            arrival = flight["arrival_datetime"]
+            cost = flight["estimated_cost"]
+            line = f"- {airline}: departs {departure}, arrives {arrival} - ${cost}"
+            lines.append(line)
+        lines.append("")
+    result = "\n".join(lines)
+    return result

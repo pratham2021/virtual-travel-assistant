@@ -1,5 +1,6 @@
 import os
 import requests
+from datetime import date
 from dotenv import load_dotenv
 from input_schema import Interest, Preference, solo_backpacker, family_of_four, couple_luxury
 
@@ -22,6 +23,34 @@ INTEREST_QUERY_MAP = {
     Interest.BEACHES: "beaches",
     Interest.WELLNESS: "spas and massage",
 }
+
+def get_city_coordinates(city_name: str) -> tuple[float, float] | None:
+    url = "https://places.googleapis.com/v1/places:searchText"
+    
+    headers = {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": api_key,
+      "X-Goog-FieldMask": "places.location"
+    }
+    
+    body = {
+      "textQuery": f"{city_name}"
+    }
+    
+    response = requests.post(url, headers=headers, json=body)
+    
+    if response.status_code not in (200, 201):
+      print(f"Places API error ({response.status_code}): {response.json()}")
+      return None
+
+    places = response.json().get("places", [])
+    if not places:
+        return None
+    
+    location = places[0]["location"]
+    latitude = location["latitude"]
+    longitude = location["longitude"]
+    return (latitude, longitude)
 
 def search_places(destination, query_text):
     # Google Places API endpoint that I'm sending requests to
@@ -52,7 +81,7 @@ def search_hotels(city_name: str):
     
     headers = {
       "Content-Type": "application/json",
-      "X-Goog-Api-Key": google_places_api_key,
+      "X-Goog-Api-Key": api_key,
       "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.types"
     }
     
@@ -103,6 +132,39 @@ def format_venues_for_prompt(candidate_venues: dict[str, dict[Interest, list[dic
       
     result = "\n".join(lines)  
     return result
+
+def format_hotels_for_prompt(candidate_hotels: dict[str, list[dict]]) -> str:
+    lines = []
+    for city, hotels in candidate_hotels.items():
+        lines.append(f"=== {city.upper()} ===")
+        for hotel in hotels:
+            hotel_name = hotel["name"]
+            hotel_rating = hotel["rating"]
+            line = f"- {hotel_name} - rating {hotel_rating} stars"
+            lines.append(line)
+            lines.append("")
+    result = "\n".join(lines)
+    return result
+
+# Transform raw hotel results into Hotel-shaped dicts
+def format_hotels(raw_hotels: list[dict], city: str, check_in_date: date, check_out_date: date) -> list[dict]:
+    results = []
+    for raw_hotel in raw_hotels:
+        if "hotel" not in raw_hotel["types"]:
+            continue
+        name = raw_hotel["displayName"]["text"]
+        rating = raw_hotel.get("rating", "no rating")
+        
+        formatted_hotel = {
+            "name": name,
+            "city": city,
+            "check_in_date": check_in_date,
+            "check_out_date": check_out_date,
+            "rating": rating
+        }
+        
+        results.append(formatted_hotel)
+    return results
 
 # itinerary_generator.py - update generate_itinerary to import and call get_candidate_venues and your new formatting function, 
 # then combine that text with the serialized preferences into the user message

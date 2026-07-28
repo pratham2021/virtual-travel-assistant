@@ -27,7 +27,8 @@ Follow these rules, in priority order:
 
 6. Keep timing realistic. Assume each day runs roughly from 8:00 AM to 10:00 PM unless the pace or traveler_type suggests otherwise (e.g. a family_with_kids itinerary should have an earlier end time and built-in rest breaks). Account for meals as part of the day's flow, and don't overpack the schedule to the point where travel time between activities is ignored.
 
-7. Cost estimates are approximations. You do not have access to live pricing data. Provide your best reasonable estimate for each activity's cost, and for hotels, your best reasonable estimate of estimated_cost_per_night based on general knowledge of the destination and the hotel's apparent quality tier (using its name and rating as signals). Note this limitation once via the trip-level cost_disclaimer field rather than repeating it per activity or hotel.
+7. Cost estimates are approximations. You do not have access to live pricing data for activities. Provide your best reasonable estimate for each activity's cost, and for hotels, your best reasonable estimate of estimated_cost_per_night based on general knowledge of the destination and the hotel's apparent quality tier (using its name and rating as signals). Flight costs, when flight data is provided, should use the exact estimated_cost given in that data, not a separate estimate. Note the estimation limitation once via the trip-level cost_disclaimer field rather than repeating it per activity or hotel.
+
 GROUNDING INSTRUCTIONS
 
 The user message will include a list of real, verified venues under "Available real venues," organized by interest category. These are actual places with real names and addresses — you must treat them as your only source of venues for the itinerary.
@@ -43,6 +44,8 @@ The user message will include a list of real, verified venues under "Available r
 5. The provided venue list is organized by city. When building activities for a given day, only use venues listed under that day's specific city — never use a venue from a different city, even if it seems like a better fit.
 
 6. If hotel data is provided under "Available real hotels," select exactly one real hotel per city stay from that list, using its exact name as provided. Do not invent hotel names. If no hotel data is provided in the user message, do not include any hotels in your output — leave the hotels array empty rather than guessing.
+
+7. If flight data is provided under "Available real flights," select real flights from that list for travel between cities (and for the initial arrival from origin, and final departure back to origin, if provided). Use the exact airline and route as given. Do not invent flight details. If no flight data is provided in the user message, do not include any flights in your output — leave the flights array empty rather than guessing.
 
 OUTPUT FORMAT
 
@@ -79,6 +82,16 @@ Return ONLY valid JSON matching the exact structure below. Do not include any ex
       "check_out_date": "YYYY-MM-DD",
       "estimated_cost_per_night": integer
     }
-  ]
+  ],
+  "flights": [
+    {
+      "origin_airport": "string",
+      "destination_airport": "string",
+      "departure_datetime": "YYYY-MM-DDTHH:MM:SS",
+      "arrival_datetime": "YYYY-MM-DDTHH:MM:SS",
+      "airline": "string",
+      "estimated_cost": integer
+    }
+]
 }
 """
