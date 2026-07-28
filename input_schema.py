@@ -174,3 +174,21 @@ hotel_test = Preference(
     include_hotels=True,
     include_flights=False,
 )
+
+flights_test = Preference(
+    origin="Austin",
+    destinations=[
+        CityStop(city="London", arrival_date=date(2026, 9, 1), departure_date=date(2026, 9, 5))
+    ],
+    group_size=2,
+    traveler_type=TravelerType.COUPLE,
+    budget_amount=5000,
+    budget_scope=BudgetScope.TOTAL_TRIP,
+    travel_style=TravelStyle.MID_RANGE,
+    pace=Pace.MODERATE,
+    interests=[Interest.FOOD, Interest.HISTORY],
+    hard_constraints=[],
+    soft_preferences=[],
+    include_hotels=True,
+    include_flights=True,
+)

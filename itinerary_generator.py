@@ -2,7 +2,7 @@
 import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from input_schema import Preference, couple_luxury, family_of_four, hotel_test, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
+from input_schema import Preference, couple_luxury, family_of_four, flights_test, hotel_test, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
 from output_schema import Itinerary
 from prompts import SYSTEM_PROMPT
 from places_client import get_candidate_venues, format_hotels, format_hotels_for_prompt, format_venues_for_prompt, search_hotels
@@ -142,5 +142,9 @@ if __name__ == "__main__":
     
     # multi_country_test_itinerary = generate_itinerary(multi_country_test)
     # print(multi_country_test_itinerary)
-    hotel_test_itinerary = generate_itinerary(hotel_test)
-    print(hotel_test_itinerary)
+    
+    # hotel_test_itinerary = generate_itinerary(hotel_test)
+    # print(hotel_test_itinerary)
+    
+    flights_test_itinerary = generate_itinerary(flights_test)
+    print(flights_test_itinerary)

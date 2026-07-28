@@ -49,7 +49,6 @@ for _, row in df[df["municipality"].notna()].iterrows():
     if city_key not in CITY_INDEX:
         CITY_INDEX[city_key] = (row["latitude_deg"], row["longitude_deg"])
 
-
 def get_airport_code(city_name: str, radius_km: float = 100.0) -> str | None:
     if not city_name or not isinstance(city_name, str):
         return None
@@ -84,12 +83,12 @@ def get_airport_code(city_name: str, radius_km: float = 100.0) -> str | None:
 
 
 # Verification Run
-test_cities = [
-    "Austin", "London", "Orlando", "Kyoto",
-    "New York", "Chicago", "Toronto", "Paris", "Tokyo",
-    "Venice", "San Francisco", "Cannes", "Boulder",
-    "Seattle", "Miami", "Rome"
-]
+# test_cities = [
+#     "Austin", "London", "Orlando", "Kyoto",
+#     "New York", "Chicago", "Toronto", "Paris", "Tokyo",
+#     "Venice", "San Francisco", "Cannes", "Boulder",
+#     "Seattle", "Miami", "Rome"
+# ]
 
-for city in test_cities:
-    print(f"{city:<15} -> {get_airport_code(city)}")
+# for city in test_cities:
+#     print(f"{city:<15} -> {get_airport_code(city)}")
