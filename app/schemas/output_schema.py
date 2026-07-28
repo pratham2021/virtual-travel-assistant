@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from datetime import date, datetime, time
 from typing import List, Self
-from input_schema import Interest
+from app.schemas.input_schema import Interest
 import re
 
 class Activity(BaseModel):

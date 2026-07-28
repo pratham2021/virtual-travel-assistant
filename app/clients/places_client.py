@@ -2,7 +2,7 @@ import os
 import requests
 from datetime import date
 from dotenv import load_dotenv
-from input_schema import Interest, Preference, solo_backpacker, family_of_four, couple_luxury
+from app.schemas.input_schema import Interest, Preference, solo_backpacker, family_of_four, couple_luxury
 
 load_dotenv()
 

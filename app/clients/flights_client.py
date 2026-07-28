@@ -2,9 +2,9 @@ import os
 import requests
 from dotenv import load_dotenv
 from datetime import date, datetime
-from input_schema import TravelStyle
-from places_client import search_places, get_city_coordinates
-from airport_codes import get_airport_code
+from app.schemas.input_schema import TravelStyle
+from app.clients.places_client import search_places, get_city_coordinates
+from app.clients.airport_codes import get_airport_code
 
 load_dotenv()
 

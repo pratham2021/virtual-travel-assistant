@@ -2,12 +2,12 @@
 import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from input_schema import Preference, couple_luxury, family_of_four, flights_test, hotel_test, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
-from output_schema import Itinerary
-from prompts import SYSTEM_PROMPT
-from places_client import get_candidate_venues, format_hotels, format_hotels_for_prompt, format_venues_for_prompt, search_hotels
-from flights_client import CABIN_CLASS_MAP, search_flights, format_flights_for_prompt
-from airport_codes import get_airport_code
+from app.schemas.input_schema import Preference, couple_luxury, family_of_four, flights_test, hotel_test, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
+from app.schemas.output_schema import Itinerary
+from app.prompts import SYSTEM_PROMPT
+from app.clients.places_client import get_candidate_venues, format_hotels, format_hotels_for_prompt, format_venues_for_prompt, search_hotels
+from app.clients.flights_client import CABIN_CLASS_MAP, search_flights, format_flights_for_prompt
+from app.clients.airport_codes import get_airport_code
 
 load_dotenv() # Load variables from the .env file into the environment
 
