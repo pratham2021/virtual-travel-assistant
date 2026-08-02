@@ -1192,10 +1192,3 @@ def index() -> rx.Component:
 
 app = rx.App()
 app.add_page(index)
-
-
-# Next steps
-# 1. Test the full submission flow end-to-end - with your backend server actually running, fill out the form completely and click submit;
-# confirm you get a job_id back with no errors
-# 2. Polling logic - once job_id is set, repeatedly check /generate-itinerary/{job_id} until the itinerary is "complete" or "failed"
-# 3. Results display - rendering the finished itinerary once polling succeeds
