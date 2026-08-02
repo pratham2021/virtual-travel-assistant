@@ -2,7 +2,14 @@ import os
 import requests
 from datetime import date
 from dotenv import load_dotenv
-from app.schemas.input_schema import Interest, Preference, solo_backpacker, family_of_four, couple_luxury
+from app.schemas.input_schema import (
+    Interest,
+    Preference,
+    solo_backpacker,
+    family_of_four,
+    couple_luxury,
+)
+from concurrent.futures import ThreadPoolExecutor # helps us run multiple tasks at the same time
 
 load_dotenv()
 
@@ -24,104 +31,112 @@ INTEREST_QUERY_MAP = {
     Interest.WELLNESS: "spas and massage",
 }
 
+
 def get_city_coordinates(city_name: str) -> tuple[float, float] | None:
     url = "https://places.googleapis.com/v1/places:searchText"
-    
+
     headers = {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": api_key,
-      "X-Goog-FieldMask": "places.location"
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "places.location",
     }
-    
-    body = {
-      "textQuery": f"{city_name}"
-    }
-    
+
+    body = {"textQuery": f"{city_name}"}
+
     response = requests.post(url, headers=headers, json=body)
-    
+
     if response.status_code not in (200, 201):
-      print(f"Places API error ({response.status_code}): {response.json()}")
-      return None
+        print(f"Places API error ({response.status_code}): {response.json()}")
+        return None
 
     places = response.json().get("places", [])
     if not places:
         return None
-    
+
     location = places[0]["location"]
     latitude = location["latitude"]
     longitude = location["longitude"]
     return (latitude, longitude)
 
+
 def search_places(destination, query_text):
     # Google Places API endpoint that I'm sending requests to
     url = "https://places.googleapis.com/v1/places:searchText"
-    
+
     # builds the headers dictionary
     headers = {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": api_key,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating"
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating",
     }
-    
+
     # request body
-    body = {
-      "textQuery": f"{query_text} in {destination}"
-    }
-    
+    body = {"textQuery": f"{query_text} in {destination}"}
+
     response = requests.post(url, headers=headers, json=body)
 
-    if response.status_code != 200: # if the API request didn't succeed, return an empty list
+    if (
+        response.status_code != 200
+    ):  # if the API request didn't succeed, return an empty list
         print(f"Places API error ({response.status_code}): {response.json()}")
         return []
-    
+
     return response.json().get("places", [])
 
+
 def search_hotels(city_name: str):
-    url = "https://places.googleapis.com/v1/places:searchText"    
-    
+    url = "https://places.googleapis.com/v1/places:searchText"
+
     headers = {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": api_key,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.types"
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.types",
     }
-    
-    body = {
-      "textQuery": f"Hotels and accommodation in {city_name}"
-    }
-    
+
+    body = {"textQuery": f"Hotels and accommodation in {city_name}"}
+
     response = requests.post(url, headers=headers, json=body)
-    
+
     if response.status_code not in (200, 201):
         print(f"Places API error ({response.status_code}): {response.json()}")
         return []
-    
+
     return response.json().get("places", [])
 
 def get_candidate_venues(preference: Preference) -> dict[str, dict[Interest, list[dict]]]:
-    # Each interest represents a genuinely different category of thing the traveler wants
     candidate_venues = {}
-    for stop in preference.destinations:
-        city_dict = {}
-        for interest in preference.interests:
-            query_phrase = INTEREST_QUERY_MAP[interest]
-            results = search_places(stop.city, query_phrase)
-            city_dict[interest] = results
-        candidate_venues[stop.city] = city_dict
-    return candidate_venues
-
-candidate_venues = get_candidate_venues(solo_backpacker)
-  
-# places_client.py - add the formatting function (e.g. format_venues_for_prompt(candidate_venues) right after get_candidate_venues)
-def format_venues_for_prompt(candidate_venues: dict[str, dict[Interest, list[dict]]]) -> str:
-    lines = []
     
+    with ThreadPoolExecutor(max_workers=10) as executor: 
+        futures = {}
+        
+        for stop in preference.destinations:
+            for interest in preference.interests:
+                query_phrase = INTEREST_QUERY_MAP[interest]
+                future = executor.submit(search_places, stop.city, query_phrase)
+                futures[future] = (stop.city, interest)
+        
+        for future in futures:
+            city, interest = futures[future]
+            results = future.result()
+            if city not in candidate_venues:
+                candidate_venues[city] = {}
+            candidate_venues[city][interest] = results
+
+    return candidate_venues 
+
+# places_client.py - add the formatting function (e.g. format_venues_for_prompt(candidate_venues) right after get_candidate_venues)
+def format_venues_for_prompt(
+    candidate_venues: dict[str, dict[Interest, list[dict]]],
+) -> str:
+    lines = []
+
     for city, interest_dict in candidate_venues.items():
         lines.append(f"=== {city.upper()} ===")
-        
+
         for interest, venues in interest_dict.items():
             lines.append(f"{interest.value.upper()}:")
             trimmed_venues = venues[:8]
-            
+
             for venue in trimmed_venues:
                 name = venue["displayName"]["text"]
                 address = venue["formattedAddress"]
@@ -129,9 +144,10 @@ def format_venues_for_prompt(candidate_venues: dict[str, dict[Interest, list[dic
                 line = f"- {name} ({address}) - rating {rating}"
                 lines.append(line)
             lines.append("")
-      
-    result = "\n".join(lines)  
+
+    result = "\n".join(lines)
     return result
+
 
 def format_hotels_for_prompt(candidate_hotels: dict[str, list[dict]]) -> str:
     lines = []
@@ -146,27 +162,31 @@ def format_hotels_for_prompt(candidate_hotels: dict[str, list[dict]]) -> str:
     result = "\n".join(lines)
     return result
 
+
 # Transform raw hotel results into Hotel-shaped dicts
-def format_hotels(raw_hotels: list[dict], city: str, check_in_date: date, check_out_date: date) -> list[dict]:
+def format_hotels(
+    raw_hotels: list[dict], city: str, check_in_date: date, check_out_date: date
+) -> list[dict]:
     results = []
     for raw_hotel in raw_hotels:
         if "hotel" not in raw_hotel["types"]:
             continue
         name = raw_hotel["displayName"]["text"]
         rating = raw_hotel.get("rating", "no rating")
-        
+
         formatted_hotel = {
             "name": name,
             "city": city,
             "check_in_date": check_in_date,
             "check_out_date": check_out_date,
-            "rating": rating
+            "rating": rating,
         }
-        
+
         results.append(formatted_hotel)
     return results
 
-# itinerary_generator.py - update generate_itinerary to import and call get_candidate_venues and your new formatting function, 
+
+# itinerary_generator.py - update generate_itinerary to import and call get_candidate_venues and your new formatting function,
 # then combine that text with the serialized preferences into the user message
 
 # prompts.py - update SYSTEM_PROMPT with the new instructions about only selecting from provided venues
