@@ -103,26 +103,58 @@ def search_hotels(city_name: str):
 
     return response.json().get("places", [])
 
-def get_candidate_venues(preference: Preference) -> dict[str, dict[Interest, list[dict]]]:
-    candidate_venues = {}
+# A list of things to do in each city for each interest
+def get_candidate_venues(
+    preference: Preference,
+) -> dict[str, dict[Interest, list[dict]]]:
+    candidate_venues = {} # Start with an empty dictionary that will hold the final, fully-collected results
     
     with ThreadPoolExecutor(max_workers=10) as executor: 
-        futures = {}
+        # Create a pool that can run up to 10 tasks simultaneously;
+        # "with" ensures the pool is properly cleaned up once this block finishes
+        futures = {} # An empty dictionary that will map each scheduled task to the city+itinerary it represents
         
         for stop in preference.destinations:
+            # Loop through every city the traveler is visiting
             for interest in preference.interests:
-                query_phrase = INTEREST_QUERY_MAP[interest]
+                # For each city, loop through every interest the traveler scheduled
+                query_phrase = INTEREST_QUERY_MAP[interest] # Look up the search phrase that corresponds to this interest
                 future = executor.submit(search_places, stop.city, query_phrase)
+                # Schedule this specific search to run on the thread pool;
+                # this does NOT wait for the search to finish - it returns immediately
+                # with a "future" placeholder representing the in-progress task
+                
                 futures[future] = (stop.city, interest)
+                # Remember which city and interest this particular future belongs to.
+                # so we can correctly match its result later
         
+        # At this point, every search across every city and every interest
+        # has already been started and is running concurrently in the background
+        
+        # Retrieves the results of work that's already running (or already finished) from the first loop.
         for future in futures:
+            # Loop through every scheduled task, one at a time, to collect its result
+            
             city, interest = futures[future]
+            # Look up which city and interest this specific future corresponds to
+            
             results = future.result()
+            # Get the actual result of this search; this pauses only if that particular
+            # search hasn't finished yet - but since they've all been running in parallel,
+            # most are likely already done by the time we ask
+            
             if city not in candidate_venues:
                 candidate_venues[city] = {}
+            # If we've not seen this city, create an empty dictionary to hold that city's results
+            
             candidate_venues[city][interest] = results
+            # Store this search's results in the correct spot: under this city,
+            # under this specific interest
 
     return candidate_venues 
+    # Once every result has been collected and organized, return the complete,
+    # fully-populated nested dictionary - same shape as the original sequential version,
+    # just built using parallel searches instead of one-at-a-time searches
 
 # places_client.py - add the formatting function (e.g. format_venues_for_prompt(candidate_venues) right after get_candidate_venues)
 def format_venues_for_prompt(

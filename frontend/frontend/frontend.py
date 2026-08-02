@@ -1,8 +1,26 @@
-import reflex as rx
-from rxconfig import config
+import asyncio
 import datetime
 from pydantic import BaseModel
+import reflex as rx
+from rxconfig import config
 import requests
+
+
+class Activity(BaseModel):
+    start_time: str = ""
+    duration_minutes: int = 0
+    end_time: str = ""
+    name: str = ""
+    category: str = ""
+    description: str = ""
+    estimated_cost: int = 0
+
+
+class Day(BaseModel):
+    city: str = ""
+    day_date: str = ""
+    theme: str = ""
+    activities: list[Activity] = []
 
 
 class Destination(BaseModel):
@@ -168,7 +186,160 @@ class State(rx.State):
         "KPW": "North Korean Won",
     }
 
+    CURRENCY_SYMBOLS: dict[str, str] = {
+        "USD": "$",
+        "EUR": "€",
+        "GBP": "£",
+        "JPY": "¥",
+        "CHF": "CHF",
+        "CAD": "$",
+        "AUD": "$",
+        "NZD": "$",
+        "CNY": "¥",
+        "HKD": "$",
+        "SGD": "$",
+        "INR": "₹",
+        "KRW": "₩",
+        "THB": "฿",
+        "MYR": "RM",
+        "IDR": "Rp",
+        "PHP": "₱",
+        "VND": "₫",
+        "TWD": "NT$",
+        "PKR": "₨",
+        "BDT": "৳",
+        "LKR": "₨",
+        "NPR": "₨",
+        "MMK": "K",
+        "KHR": "៛",
+        "LAK": "₭",
+        "BND": "$",
+        "MOP": "MOP$",
+        "MNT": "₮",
+        "AED": "د.إ",
+        "SAR": "﷼",
+        "QAR": "﷼",
+        "KWD": "د.ك",
+        "BHD": ".د.ب",
+        "OMR": "﷼",
+        "JOD": "د.ا",
+        "ILS": "₪",
+        "TRY": "₺",
+        "EGP": "£",
+        "MAD": "د.م.",
+        "TND": "د.ت",
+        "DZD": "د.ج",
+        "LYD": "ل.د",
+        "SDG": "ج.س.",
+        "NGN": "₦",
+        "GHS": "₵",
+        "KES": "KSh",
+        "TZS": "TSh",
+        "UGX": "USh",
+        "ZAR": "R",
+        "ETB": "Br",
+        "XOF": "CFA",
+        "XAF": "FCFA",
+        "RWF": "FRw",
+        "BIF": "FBu",
+        "CDF": "FC",
+        "GNF": "FG",
+        "SLL": "Le",
+        "LRD": "$",
+        "GMD": "D",
+        "CVE": "$",
+        "STN": "Db",
+        "AOA": "Kz",
+        "ZMW": "ZK",
+        "MWK": "MK",
+        "MZN": "MT",
+        "BWP": "P",
+        "NAD": "$",
+        "SZL": "L",
+        "LSL": "L",
+        "MUR": "₨",
+        "SCR": "₨",
+        "MGA": "Ar",
+        "KMF": "CF",
+        "DJF": "Fdj",
+        "SOS": "S",
+        "ERN": "Nfk",
+        "SSP": "£",
+        "MXN": "$",
+        "BRL": "R$",
+        "ARS": "$",
+        "CLP": "$",
+        "COP": "$",
+        "PEN": "S/",
+        "UYU": "$",
+        "PYG": "₲",
+        "BOB": "Bs.",
+        "VES": "Bs.",
+        "GYD": "$",
+        "SRD": "$",
+        "GTQ": "Q",
+        "HNL": "L",
+        "NIO": "C$",
+        "CRC": "₡",
+        "PAB": "B/.",
+        "DOP": "RD$",
+        "JMD": "$",
+        "TTD": "$",
+        "BBD": "$",
+        "BSD": "$",
+        "BZD": "$",
+        "XCD": "$",
+        "HTG": "G",
+        "CUP": "$",
+        "AWG": "ƒ",
+        "ANG": "ƒ",
+        "KYD": "$",
+        "BMD": "$",
+        "PLN": "zł",
+        "CZK": "Kč",
+        "HUF": "Ft",
+        "RON": "lei",
+        "BGN": "лв",
+        "RSD": "дин.",
+        "UAH": "₴",
+        "RUB": "₽",
+        "BYN": "Br",
+        "GEL": "₾",
+        "AMD": "֏",
+        "AZN": "₼",
+        "KZT": "₸",
+        "UZS": "so'm",
+        "TJS": "SM",
+        "KGS": "с",
+        "TMT": "m",
+        "MDL": "L",
+        "ALL": "L",
+        "MKD": "ден",
+        "BAM": "KM",
+        "ISK": "kr",
+        "NOK": "kr",
+        "SEK": "kr",
+        "DKK": "kr",
+        "FJD": "$",
+        "PGK": "K",
+        "SBD": "$",
+        "TOP": "T$",
+        "VUV": "VT",
+        "WST": "T",
+        "XPF": "₣",
+        "AFN": "؋",
+        "IRR": "﷼",
+        "IQD": "ع.د",
+        "SYP": "£",
+        "LBP": "ل.ل",
+        "YER": "﷼",
+        "BTN": "Nu.",
+        "MVR": "Rf",
+        "KPW": "₩",
+    }
+
     budget_currency: str = "USD"
+    itinerary_currency_symbol: str = ""
     notes: str = ""
 
     traveler_type_options = {
@@ -268,6 +439,12 @@ class State(rx.State):
     is_submitting: bool = False
     submission_error: str = ""
 
+    itinerary_status: str = ""
+    itinerary_result: dict = {}
+    itinerary_days: list[Day] = []
+    polling_error: str = ""
+    itinerary_by_city: dict[str, list[Day]] = {}
+
     def set_origin(self, value: str):
         self.origin = value
 
@@ -301,9 +478,8 @@ class State(rx.State):
     def set_departure_date(self, date_string):
         if date_string:
             parsed_datetime = datetime.datetime.strptime(date_string, "%Y-%m-%d")
-            if (
-                self.arrival_date and parsed_datetime.date() >= self.arrival_date
-            ):  # make sure it's not after arrival date
+            if self.arrival_date and parsed_datetime.date() >= self.arrival_date:
+                # make sure it's not after arrival date
                 return
             self.departure_date = parsed_datetime.date()
         else:
@@ -312,9 +488,8 @@ class State(rx.State):
     def set_arrival_date(self, date_string):
         if date_string:
             parsed_datetime = datetime.datetime.strptime(date_string, "%Y-%m-%d")
-            if (
-                self.departure_date and parsed_datetime.date() <= self.departure_date
-            ):  # make sure it's not before departure date
+            if self.departure_date and parsed_datetime.date() <= self.departure_date:
+                # make sure it's not before departure date
                 return
             self.arrival_date = parsed_datetime.date()
         else:
@@ -428,8 +603,8 @@ class State(rx.State):
         for destination in self.destinations:
             destination_dictionary = {
                 "city": destination.destination_city_name,
-                "departure_date": destination.departure_date.strftime("%Y-%m-%d"),
-                "arrival_date": destination.arrival_date.strftime("%Y-%m-%d"),
+                "departure_date": destination.arrival_date.strftime("%Y-%m-%d"),
+                "arrival_date": destination.departure_date.strftime("%Y-%m-%d"),
             }
             converted_destinations.append(destination_dictionary)
 
@@ -454,9 +629,86 @@ class State(rx.State):
 
         return payload
 
-    async def submit_form(self):
+    async def poll_for_result(self):
+        max_attempts = 100
+        current_attempt = 0
+        while current_attempt < max_attempts:
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:8000/generate-itinerary/{self.job_id}"
+                )
 
+                result = response.json()
+                self.itinerary_status = result.get("status", None)
+
+                if self.itinerary_status is None:
+                    self.polling_error = (
+                        "Received an unexpected response while checking your itinerary."
+                    )
+                    return
+
+                if response.status_code not in [200, 201]:
+                    self.polling_error = (
+                        "Something went wrong checking your itinerary's status."
+                    )
+                    return
+            except requests.exceptions.RequestException as requestE:
+                self.polling_error = (
+                    "Something went wrong checking your itinerary's status."
+                )
+                return
+
+            if self.itinerary_status == "complete":
+                self.itinerary_result = result["result"]
+                raw_days = self.itinerary_result.get("days", [])
+                self.itinerary_currency_symbol = self.CURRENCY_SYMBOLS[
+                    self.itinerary_result.get("budget_currency", "USD")
+                ]
+                self.itinerary_days = [Day(**day) for day in raw_days]
+                for i in range(len(self.itinerary_days)):
+                    self.itinerary_days[i].day_date = datetime.datetime.strptime(
+                        self.itinerary_days[i].day_date, "%Y-%m-%d"
+                    ).strftime("%B %d, %Y")
+                    for j in range(len(self.itinerary_days[i].activities)):
+                        parsed_start = datetime.datetime.strptime(
+                            self.itinerary_days[i].activities[j].start_time, "%H:%M:%S"
+                        )
+                        duration_span = datetime.timedelta(
+                            minutes=self.itinerary_days[i]
+                            .activities[j]
+                            .duration_minutes
+                        )
+                        calculated_end = parsed_start + duration_span
+                        self.itinerary_days[i].activities[j].start_time = (
+                            parsed_start.strftime("%-I:%M %p")
+                        )
+                        self.itinerary_days[i].activities[j].end_time = (
+                            calculated_end.strftime("%-I:%M %p")
+                        )
+
+                itinerary_by_city = {}
+                for day in self.itinerary_days:
+                    if day.city not in itinerary_by_city:
+                        itinerary_by_city[day.city] = []
+                    itinerary_by_city[day.city].append(day)
+
+                self.itinerary_by_city = itinerary_by_city
+                return
+
+            if self.itinerary_status == "failed":
+                self.polling_error = result["error"]
+                return
+
+            yield
+            await asyncio.sleep(3)
+            current_attempt += 1
+        self.polling_error = (
+            "This is taking longer than expected. Please check back later."
+        )
+
+    async def submit_form(self):
         # Check 1: Origin
+        self.polling_error = ""
         stripped_origin = self.origin.strip()
 
         if len(stripped_origin) < 2:
@@ -534,13 +786,17 @@ class State(rx.State):
                 "http://127.0.0.1:8000/generate-itinerary", json=payload
             )
 
+            print(response.json())
+
             if response.status_code in [200, 201]:
                 result = response.json()
                 self.job_id = result["job_id"]
                 self.submission_error = ""
+                async for _ in self.poll_for_result():
+                    pass
             else:
                 self.submission_error = (
-                    "Something went wrong on our end./* Please try again in a moment."
+                    "Something went wrong on our end. Please try again in a moment."
                 )
         except requests.exceptions.RequestException as requestE:
             self.submission_error = "We couldn't connect to the server. Please check your internet connection and try again."
@@ -766,7 +1022,6 @@ def index() -> rx.Component:
                 ),
                 rx.divider(),
                 rx.heading("Trip Details", size="6"),
-                
                 rx.vstack(
                     rx.input(
                         placeholder="City name",
@@ -833,11 +1088,9 @@ def index() -> rx.Component:
                             ),
                         ),
                     ),
-            
                     align="center",
                     spacing="4",
                 ),
-                
                 rx.divider(),
                 rx.button(
                     rx.cond(State.is_submitting, "Submitting...", "Generate Itinerary"),
@@ -845,8 +1098,87 @@ def index() -> rx.Component:
                     disabled=State.is_submitting,
                 ),
                 rx.cond(
-                    State.destination_error != "",
-                    rx.text(State.destination_error, color=rx.color("crimson", 7)),
+                    State.is_submitting
+                    | (State.itinerary_status == "running")
+                    | (State.itinerary_status == "pending"),
+                    rx.vstack(
+                        rx.spinner(size="3"),
+                        rx.text("Generating your itinerary... this may take a minute."),
+                        align="center",
+                        spacing="3",
+                    ),
+                ),
+                rx.cond(
+                    State.submission_error != "",
+                    rx.text(State.submission_error, color=rx.color("crimson", 7)),
+                ),
+                rx.cond(
+                    State.polling_error != "",
+                    rx.text(State.polling_error, color=rx.color("crimson", 7)),
+                ),
+                rx.cond(
+                    State.itinerary_result.length() != 0,
+                    rx.vstack(
+                        rx.heading("Your Itinerary", size="7"),
+                        rx.heading(
+                            f"Origin: {State.itinerary_result['origin']}", size="6"
+                        ),
+                        rx.heading(
+                            f"Total Cost: {State.itinerary_result['total_estimated_cost']} {State.itinerary_result['budget_currency']}",
+                            size="6",
+                        ),
+                        rx.heading(
+                            f"Note: {State.itinerary_result['cost_disclaimer']}",
+                            size="3",
+                        ),
+                        rx.foreach(
+                            State.itinerary_by_city,
+                            lambda city_entry: rx.vstack(
+                                rx.heading(f"{city_entry[0]}", size="6"),
+                                rx.foreach(
+                                    city_entry[1],
+                                    lambda day: rx.vstack(
+                                        rx.heading(f"{day.day_date}", size="4"),
+                                        rx.vstack(
+                                            rx.heading(
+                                                f"Theme: {day.theme}",
+                                                font_style="italic",
+                                                color=rx.color("gray", 9),
+                                            ),
+                                            rx.vstack(
+                                                rx.foreach(
+                                                    day.activities,
+                                                    lambda activity: rx.vstack(
+                                                        rx.cond(
+                                                            activity.estimated_cost
+                                                            == 0,
+                                                            rx.text(
+                                                                f"{activity.start_time} - {activity.end_time}: {activity.name} - Free",
+                                                                font_style="italic",
+                                                                color=rx.color(
+                                                                    "gray", 9
+                                                                ),
+                                                            ),
+                                                            rx.text(
+                                                                f"{activity.start_time} - {activity.end_time}: {activity.name} - {State.itinerary_currency_symbol}{activity.estimated_cost}",
+                                                                font_style="italic",
+                                                                color=rx.color(
+                                                                    "gray", 9
+                                                                ),
+                                                            ),
+                                                        ),
+                                                    ),
+                                                ),
+                                                padding_left="3em",
+                                            ),
+                                            padding_left="3em",
+                                        ),
+                                        padding_left="3em",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
                 ),
                 spacing="5",
                 padding="0.5em",  # inner space is twice the current element's font size
@@ -863,8 +1195,7 @@ app.add_page(index)
 
 
 # Next steps
-
-# 1. Test the full submission flow end-to-end - with your backend server actually running, fill out the form completely and click submit; 
+# 1. Test the full submission flow end-to-end - with your backend server actually running, fill out the form completely and click submit;
 # confirm you get a job_id back with no errors
 # 2. Polling logic - once job_id is set, repeatedly check /generate-itinerary/{job_id} until the itinerary is "complete" or "failed"
 # 3. Results display - rendering the finished itinerary once polling succeeds
