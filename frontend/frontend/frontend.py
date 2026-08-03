@@ -1116,6 +1116,7 @@ def index() -> rx.Component:
                     State.polling_error != "",
                     rx.text(State.polling_error, color=rx.color("crimson", 7)),
                 ),
+                
                 rx.cond(
                     State.itinerary_result.length() != 0,
                     rx.vstack(
