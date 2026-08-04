@@ -29,6 +29,23 @@ class Destination(BaseModel):
     arrival_date: datetime.date = datetime.date.today()
 
 
+class Hotel(BaseModel):
+    name: str = ""
+    city: str = ""
+    check_in_date: str = ""
+    check_out_date: str = ""
+    estimated_cost_per_night: int = 0
+
+
+class Flight(BaseModel):
+    origin_airport: str = ""
+    destination_airport: str = ""
+    departure_datetime: str = ""
+    arrival_datetime: str = ""
+    airline: str = ""
+    estimated_cost: int = 0
+
+
 class State(rx.State):
     origin: str = ""
     group_size: int = 1
@@ -397,7 +414,10 @@ class State(rx.State):
     pace: str = "moderate"  # ["relaxed", "moderate", "packed"]
 
     include_flights: bool = False
+    flights: list[Flight] = []
+
     include_hotels: bool = False
+    hotels: list[Hotel] = []
 
     destination_error = ""
 
@@ -661,10 +681,18 @@ class State(rx.State):
             if self.itinerary_status == "complete":
                 self.itinerary_result = result["result"]
                 raw_days = self.itinerary_result.get("days", [])
+
+                raw_hotels = self.itinerary_result.get("hotels", [])
+                raw_flights = self.itinerary_result.get("flights", [])
+
                 self.itinerary_currency_symbol = self.CURRENCY_SYMBOLS[
                     self.itinerary_result.get("budget_currency", "USD")
                 ]
                 self.itinerary_days = [Day(**day) for day in raw_days]
+
+                self.hotels = [Hotel(**hotel) for hotel in raw_hotels]
+                self.flights = [Flight(**flight) for flight in raw_flights]
+
                 for i in range(len(self.itinerary_days)):
                     self.itinerary_days[i].day_date = datetime.datetime.strptime(
                         self.itinerary_days[i].day_date, "%Y-%m-%d"
@@ -709,6 +737,20 @@ class State(rx.State):
     async def submit_form(self):
         # Check 1: Origin
         self.polling_error = ""
+        self.submission_error = ""
+        self.destination_error = ""
+
+        self.itinerary_status = ""
+        self.itinerary_result = {}
+        self.itinerary_days = []
+        self.polling_error = ""
+
+        #         itinerary_status: str = ""
+        # itinerary_result: dict = {}
+        # itinerary_days: list[Day] = []
+        # polling_error: str = ""
+        # itinerary_by_city: dict[str, list[Day]] = {}
+
         stripped_origin = self.origin.strip()
 
         if len(stripped_origin) < 2:
@@ -1208,7 +1250,7 @@ def index() -> rx.Component:
                                     "plus",
                                     color=rx.color("grass", 11),
                                     size=14,  # Slightly smaller icon size to fit neatly in row
-                                    stroke_width=2.5,
+                                    stroke_width=2,
                                 ),
                                 background_color=rx.color("grass", 3),
                                 radius="full",
@@ -1223,33 +1265,39 @@ def index() -> rx.Component:
                             align="center",
                             spacing="3",
                         ),
-                        rx.foreach(
-                            State.traveler_ages,
-                            lambda age: rx.hstack(
-                                rx.text(
-                                    f"Age: {age}",
-                                    color="#1C2B3A",
-                                ),
-                                rx.icon_button(
-                                    rx.icon(
-                                        "x",
-                                        color=rx.color("crimson", 11),
-                                        size=14,  # Slightly smaller icon size to fit neatly in row
-                                        stroke_width=2.5,
+                        rx.vstack(
+                            rx.foreach(
+                                State.traveler_ages,
+                                lambda age: rx.hstack(
+                                    rx.text(
+                                        f"Age: {age}",
+                                        color="#1C2B3A",
                                     ),
-                                    background_color=rx.color("crimson", 3),
-                                    radius="full",
-                                    width="28px",
-                                    height="28px",
-                                    on_click=lambda: State.remove_traveler_age(age),
-                                    _hover={
-                                        "background_color": rx.color("crimson", 4),
-                                        "cursor": "pointer",
-                                    },
+                                    rx.icon_button(
+                                        rx.icon(
+                                            "x",
+                                            color=rx.color("crimson", 11),
+                                            size=14,  # Slightly smaller icon size to fit neatly in row
+                                            stroke_width=2.5,
+                                        ),
+                                        background_color=rx.color("crimson", 3),
+                                        radius="full",
+                                        width="28px",
+                                        height="28px",
+                                        on_click=lambda: State.remove_traveler_age(age),
+                                        _hover={
+                                            "background_color": rx.color("crimson", 4),
+                                            "cursor": "pointer",
+                                        },
+                                    ),
+                                    spacing="3",
+                                    justify="between",  # distributes space evenly between the text and the icon button (text on the left, button on the right)
+                                    width="100%",  # expand and take up all the width of the parent container
+                                    align="center",  # center all items in the hstack vertically
                                 ),
-                                align="center",
-                                spacing="3",
                             ),
+                            max_height="200px",
+                            overflow_y="auto",
                         ),
                         align="center",
                         spacing="4",
@@ -1319,33 +1367,40 @@ def index() -> rx.Component:
                             spacing="3",
                             align="center",
                         ),
-                        rx.foreach(
-                            State.destinations,
-                            lambda destination: rx.hstack(
-                                rx.text(
-                                    f"{destination.destination_city_name}: {destination.departure_date} -> {destination.arrival_date}",
-                                    color="#1C2B3A",
-                                ),
-                                rx.icon_button(
-                                    rx.icon(
-                                        "x",
-                                        color=rx.color("crimson", 11),
-                                        size=14,  # Slightly smaller icon size to fit neatly in row
-                                        stroke_width=2.5,
+                        rx.vstack(
+                            rx.foreach(
+                                State.destinations,
+                                lambda destination: rx.hstack(
+                                    rx.text(
+                                        f"{destination.destination_city_name}: {destination.departure_date} -> {destination.arrival_date}",
+                                        color="#1C2B3A",
                                     ),
-                                    background_color=rx.color("crimson", 3),
-                                    radius="full",
-                                    width="25px",
-                                    height="25px",
-                                    on_click=lambda: State.remove_destination(
-                                        destination
+                                    rx.icon_button(
+                                        rx.icon(
+                                            "x",
+                                            color=rx.color("crimson", 11),
+                                            size=14,  # Slightly smaller icon size to fit neatly in row
+                                            stroke_width=2.5,
+                                        ),
+                                        background_color=rx.color("crimson", 3),
+                                        radius="full",
+                                        width="25px",
+                                        height="25px",
+                                        on_click=lambda: State.remove_destination(
+                                            destination
+                                        ),
+                                        _hover={
+                                            "background_color": rx.color("crimson", 4),
+                                            "cursor": "pointer",
+                                        },
                                     ),
-                                    _hover={
-                                        "background_color": rx.color("crimson", 4),
-                                        "cursor": "pointer",
-                                    },
+                                    justify="between",  # distributes space evenly between the text and the icon button (text on the left, button on the right)
+                                    width="100%",  # expand and take up all the width of the parent container
+                                    align="center",  # center all items in the hstack vertically
                                 ),
                             ),
+                            max_height="200px",
+                            overflow_y="auto",  # show a vertical scroll bar only if an element's content is taller than the box holding it.
                         ),
                         align="center",
                         spacing="4",
@@ -1394,21 +1449,22 @@ def index() -> rx.Component:
                 rx.cond(
                     State.itinerary_result.length() != 0,
                     rx.vstack(
-                        rx.heading("Your Itinerary", size="7", color="#1C2B3A"),
+                        rx.heading("Your Itinerary", size="7", color="#F7F3EA"),
                         rx.heading(
                             f"Origin: {State.itinerary_result['origin']}",
                             size="6",
-                            color="#1C2B3A",
+                            color="#F7F3EA",
                         ),
                         rx.heading(
                             f"Total Cost: {State.itinerary_result['total_estimated_cost']} {State.itinerary_result['budget_currency']}",
                             size="6",
-                            color="#1C2B3A",
+                            color="#F7F3EA",
                         ),
                         rx.heading(
                             f"Note: {State.itinerary_result['cost_disclaimer']}",
                             size="3",
-                            color="#1C2B3A",
+                            color="#F7F3EA",
+                            align="center",
                         ),
                         rx.foreach(
                             State.itinerary_by_city,
@@ -1424,7 +1480,7 @@ def index() -> rx.Component:
                                         ),
                                         rx.vstack(
                                             rx.heading(
-                                                f"Theme: {day.theme}",
+                                                f"{day.theme}",
                                                 font_style="italic",
                                                 color="#1C2B3A",
                                             ),
@@ -1436,18 +1492,14 @@ def index() -> rx.Component:
                                                             activity.estimated_cost
                                                             == 0,
                                                             rx.text(
-                                                                f"{activity.start_time} - {activity.end_time}: {activity.name} - Free",
+                                                                f"{activity.start_time} - {activity.end_time}: {activity.name}",
                                                                 font_style="italic",
-                                                                color=rx.color(
-                                                                    "gray", 9
-                                                                ),
+                                                                color="#1C2B3A",
                                                             ),
                                                             rx.text(
                                                                 f"{activity.start_time} - {activity.end_time}: {activity.name} - {State.itinerary_currency_symbol}{activity.estimated_cost}",
                                                                 font_style="italic",
-                                                                color=rx.color(
-                                                                    "gray", 9
-                                                                ),
+                                                                color="#1C2B3A",
                                                             ),
                                                         ),
                                                     ),
@@ -1464,7 +1516,49 @@ def index() -> rx.Component:
                                 background_color="#F7F3EA",
                                 border_radius="12px",
                                 padding="1.5em",
-                                box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",                                
+                                box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                            ),
+                        ),
+                        rx.cond(
+                            State.hotels.length() > 0,
+                            rx.vstack(
+                                rx.heading("Hotels", size="6", color="#1C2B3A"),
+                                rx.list.unordered(
+                                    rx.foreach(
+                                        State.hotels,
+                                        lambda hotel: rx.list.item(
+                                            f"{hotel.name} · {hotel.check_in_date} to {hotel.check_out_date} · {State.itinerary_currency_symbol}{hotel.estimated_cost_per_night}/night",
+                                            color="#1C2B3A",
+                                        ),
+                                    ),
+                                ),
+                                align="start",
+                                width="100%",
+                                background_color="#F7F3EA",
+                                border_radius="12px",
+                                padding="1.5em",
+                                box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                            ),
+                        ),
+                        rx.cond(
+                            State.flights.length() > 0,
+                            rx.vstack(
+                                rx.heading("Flights", size="6", color="#1C2B3A"),
+                                rx.list.unordered(
+                                    rx.foreach(
+                                        State.flights,
+                                        lambda flight: rx.list.item(
+                                            f"{flight.airline}: {flight.origin_airport} → {flight.destination_airport} · {State.itinerary_currency_symbol}{flight.estimated_cost}",
+                                            color="#1C2B3A",
+                                        ),
+                                    ),
+                                ),
+                                align="start",
+                                width="100%",
+                                background_color="#F7F3EA",
+                                border_radius="12px",
+                                padding="1.5em",
+                                box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
                             ),
                         ),
                         background_color="#1C2B3A",
@@ -1472,19 +1566,36 @@ def index() -> rx.Component:
                         align="center",
                         spacing="4",
                     ),  # outer v stack
-
                 ),
                 spacing="5",
-                padding="0.5em",  # inner space is twice the current element's font size
+                padding="0.5em",  # inner space is half the current element's font size
                 width="100%",
                 align="center",
             ),
         ),
         width="100%",
-        min_height="100vh",
+        min_height="100vh",  # we want the container housing all of our user interface elements to take up 100% of the browser window's height
         background_color="#1C2B3A",
     )
 
 
 app = rx.App()
 app.add_page(index)
+
+# 1. Hotels and flights display
+# If a user checks include_hotels/include_flights, that data comes back in itinerary_result but currently isn't rendered anywhere in your results section — only days/activities are shown.
+
+# 2. Job persistence
+# Your jobs dictionary is still in-memory only — you hit "Job not found" multiple times today from backend restarts.
+# Worth a simple fix (even a local JSON file) if you want to keep iterating without losing test data.
+
+# 3. Backend generation speed
+# You confirmed budget-driven retries can push generation to 3-5+ minutes.
+# You parallelized venue search; flight/hotel searches could get the same treatment if this remains a priority.
+
+# 4. Minor styling loose ends
+# A few small things flagged along the way — like double-checking your Interests/Restrictions grids' responsive column counts actually got added,
+# and whether the dashed "ticket stub" signature divider from your original design plan ever got implemented between the form and results sections.
+
+# 5. Deployment
+# Everything currently runs locally only. Going from "works on my machine" to something genuinely shareable would mean hosting both the FastAPI backend and Reflex frontend somewhere real.

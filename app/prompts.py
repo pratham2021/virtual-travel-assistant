@@ -45,7 +45,7 @@ The user message will include a list of real, verified venues under "Available r
 
 6. If hotel data is provided under "Available real hotels," select exactly one real hotel per city stay from that list, using its exact name as provided. Do not invent hotel names. If no hotel data is provided in the user message, do not include any hotels in your output — leave the hotels array empty rather than guessing.
 
-7. If flight data is provided under "Available real flights," select real flights from that list for travel between cities (and for the initial arrival from origin, and final departure back to origin, if provided). Use the exact airline and route as given. Do not invent flight details. If no flight data is provided in the user message, do not include any flights in your output — leave the flights array empty rather than guessing.
+7. If flight data is provided under "Available real flights," select real flights from that list for travel between cities. Use the exact origin_airport and destination_airport codes exactly as given in the provided flight data (e.g. "AUS", not "Austin") — never substitute a city name for the airport code. Use the exact airline and route as given. Do not invent flight details. If no flight data is provided in the user message, do not include any flights in your output — leave the flights array empty rather than guessing.
 
 OUTPUT FORMAT
 
