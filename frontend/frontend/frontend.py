@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import reflex as rx
 from rxconfig import config
 import requests
-
+import time
 
 class Activity(BaseModel):
     start_time: str = ""
@@ -733,6 +733,8 @@ class State(rx.State):
         self.polling_error = (
             "This is taking longer than expected. Please check back later."
         )
+        
+
 
     async def submit_form(self):
         # Check 1: Origin
@@ -744,12 +746,9 @@ class State(rx.State):
         self.itinerary_result = {}
         self.itinerary_days = []
         self.polling_error = ""
-
-        #         itinerary_status: str = ""
-        # itinerary_result: dict = {}
-        # itinerary_days: list[Day] = []
-        # polling_error: str = ""
-        # itinerary_by_city: dict[str, list[Day]] = {}
+        self.itinerary_by_city = {}
+        
+        start_time = time.time()
 
         stripped_origin = self.origin.strip()
 
@@ -836,6 +835,8 @@ class State(rx.State):
                 self.submission_error = ""
                 async for _ in self.poll_for_result():
                     pass
+                elapsed_time = time.time() - start_time
+                print(f"Elapsed time: {elapsed_time:.1f} seconds")
             else:
                 self.submission_error = (
                     "Something went wrong on our end. Please try again in a moment."
@@ -1581,21 +1582,3 @@ def index() -> rx.Component:
 
 app = rx.App()
 app.add_page(index)
-
-# 1. Hotels and flights display
-# If a user checks include_hotels/include_flights, that data comes back in itinerary_result but currently isn't rendered anywhere in your results section — only days/activities are shown.
-
-# 2. Job persistence
-# Your jobs dictionary is still in-memory only — you hit "Job not found" multiple times today from backend restarts.
-# Worth a simple fix (even a local JSON file) if you want to keep iterating without losing test data.
-
-# 3. Backend generation speed
-# You confirmed budget-driven retries can push generation to 3-5+ minutes.
-# You parallelized venue search; flight/hotel searches could get the same treatment if this remains a priority.
-
-# 4. Minor styling loose ends
-# A few small things flagged along the way — like double-checking your Interests/Restrictions grids' responsive column counts actually got added,
-# and whether the dashed "ticket stub" signature divider from your original design plan ever got implemented between the form and results sections.
-
-# 5. Deployment
-# Everything currently runs locally only. Going from "works on my machine" to something genuinely shareable would mean hosting both the FastAPI backend and Reflex frontend somewhere real.
