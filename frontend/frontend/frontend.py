@@ -820,282 +820,557 @@ def index() -> rx.Component:
     return rx.center(
         rx.container(
             rx.vstack(
-                rx.heading("Plan Your Trip", size="8", margin_bottom="0.5em"),
-                rx.vstack(
-                    rx.heading("Trip Basics", size="6"),
-                    rx.input(
-                        placeholder="Origin",
-                        value=State.origin,
-                        on_change=State.set_origin,
-                    ),
-                    rx.input(
-                        type="number",
-                        value=State.group_size,
-                        on_change=State.set_group_size,
-                        placeholder="1",
-                    ),
-                    rx.select(
-                        State.traveler_type_options.keys(),  # A list of strings or values that populate the choices in the dropdown menu.
-                        value=State.current_traveler_type,  # A state variable bound to the currently selected option
-                        on_change=State.handle_traveler_type_change,  # What happens when the user selects a different option from the dropdown, manipulating the state variable.
-                    ),
-                    spacing="4",
-                    align="center",
+                rx.heading(
+                    "Plan Your Trip", size="8", margin_bottom="0.5em", margin_top="1em"
                 ),
-                rx.divider(),
-                rx.vstack(
-                    rx.heading("Budget", size="6"),
-                    rx.select(
-                        State.formatted_currencies,  # A list of strings or values that populate the choices in the dropdown menu.
-                        value=current_currency,  # A state variable bound to the currently selected option
-                        on_change=State.handle_currency_option_change,  # What happens when the user selects a different option from the dropdown, manipulating the state variable.
-                    ),
-                    rx.input(
-                        type="number",
-                        value=State.budget_amount,
-                        step=0.01,
-                        on_change=State.set_budget_amount,
-                    ),
-                    rx.select(
-                        State.budget_scope_options.keys(),
-                        value=State.current_budget_scope,
-                        on_change=State.handle_budget_scope_change,
-                    ),
-                    spacing="4",
-                    width="100%",
-                    align="center",
-                ),
-                rx.divider(),
-                rx.vstack(
-                    rx.heading("Style & Pace", size="6"),
-                    rx.select(
-                        State.travel_style_options.keys(),
-                        value=State.current_travel_style,
-                        on_change=State.handle_travel_style_change,
-                    ),
-                    rx.select(
-                        State.pace_options.keys(),
-                        value=State.current_pace_option,
-                        on_change=State.handle_pace_change,
-                    ),
-                    spacing="4",
-                    width="100%",
-                    align="center",
-                ),
-                rx.divider(),
-                rx.vstack(
-                    rx.heading("Extras", size="6"),
-                    rx.text_area(
-                        placeholder="Any special occasions, accessibility needs, or preferences to add?",
-                        value=State.notes,
-                        on_change=State.set_notes,
-                    ),
-                    rx.checkbox(
-                        "Flights",
-                        checked=State.include_flights,
-                        on_change=State.set_include_flights,
-                    ),
-                    rx.checkbox(
-                        "Hotels",
-                        checked=State.include_hotels,
-                        on_change=State.set_include_hotels,
-                    ),
-                    spacing="4",
-                    width="100%",
-                    align="center",
-                ),
-                rx.divider(),
-                rx.heading("Interests", size="6"),
-                rx.grid(
-                    rx.foreach(
-                        State.INTEREST_OPTIONS,
-                        lambda interest: rx.hstack(
-                            rx.checkbox(
-                                interest[0],
-                                is_checked=State.selected_interests.contains(
-                                    interest[1]
+                rx.flex(
+                    rx.vstack(
+                        rx.heading("Trip Basics", size="6", color="#1C2B3A"),
+                        rx.input(
+                            placeholder="Origin",
+                            value=State.origin,
+                            on_change=State.set_origin,
+                            background_color="#1C2B3A",
+                            color="#F7F3EA",
+                            width="100%",
+                        ),
+                        rx.input(
+                            type="number",
+                            value=State.group_size,
+                            on_change=State.set_group_size,
+                            placeholder="1",
+                            min=1,
+                            background_color="#1C2B3A",
+                            color="#F7F3EA",
+                            width="100%",
+                        ),
+                        rx.box(
+                            rx.select.root(
+                                rx.select.trigger(
+                                    width="100%",
                                 ),
-                                on_change=lambda val: State.toggle_item(
-                                    interest[1], val
+                                rx.select.content(
+                                    rx.select.group(
+                                        rx.foreach(
+                                            State.traveler_type_options.keys(),
+                                            lambda key: rx.select.item(key, value=key),
+                                        )
+                                    ),
+                                    style={
+                                        "background_color": "#1C2B3A",
+                                        "color": "#FFFFFF",
+                                    },
                                 ),
+                                value=State.current_traveler_type,
+                                on_change=State.handle_traveler_type_change,
                             ),
-                            padding_y="0.25em",  # padding only applied to the top and bottom
-                        ),
-                    ),
-                    columns="2",
-                    spacing="3",
-                    row_gap="3",
-                    column_gap="6",
-                    max_width="80%",
-                    margin="0 8% 0 12%",
-                    template_columns="1fr 1fr",
-                ),
-                rx.divider(),
-                rx.heading("Restrictions & Preferences", size="6"),
-                rx.grid(
-                    rx.foreach(
-                        State.HARD_CONSTRAINT_OPTIONS,
-                        lambda constraint: rx.checkbox(
-                            constraint[0],
-                            is_checked=State.hard_constraints.contains(constraint[1]),
-                            on_change=lambda val: State.toggle_hard_constraint(
-                                constraint[1], val
-                            ),
-                        ),
-                    ),
-                    rx.foreach(
-                        State.SOFT_PREFERENCE_OPTIONS,
-                        lambda constraint: rx.checkbox(
-                            constraint[0],
-                            is_checked=State.soft_preferences.contains(constraint[1]),
-                            on_change=lambda val: State.toggle_soft_preference(
-                                constraint[1], val
-                            ),
-                        ),
-                    ),
-                    columns="2",
-                    spacing="3",
-                    row_gap="3",
-                    column_gap="6",
-                    max_width="80%",
-                    margin="0 8% 0 18%",
-                    template_columns="1fr 1fr",
-                ),
-                rx.divider(),
-                rx.vstack(
-                    rx.heading("Traveler Ages", size="6"),
-                    rx.input(
-                        type="number",
-                        value=State.current_traveler_age,
-                        on_change=State.set_current_traveler_age,
-                        placeholder="Enter age",
-                    ),
-                    rx.hstack(
-                        rx.icon_button(
-                            rx.icon(
-                                "plus",
-                                color=rx.color("grass", 11),
-                                size=14,  # Slightly smaller icon size to fit neatly in row
-                                stroke_width=2.5,
-                            ),
-                            background_color=rx.color("grass", 3),
-                            radius="full",
-                            width="28px",
-                            height="28px",
-                            on_click=State.add_traveler_age,
-                            _hover={
-                                "background_color": rx.color("grass", 4),
-                                "cursor": "pointer",
+                            width="100%",
+                            style={
+                                "& button, & .rt-SelectTrigger": {
+                                    "background_color": "#1C2B3A !important",
+                                    "background": "#1C2B3A !important",
+                                    "color": "#FFFFFF !important",
+                                    "box_shadow": "none !important",
+                                }
                             },
                         ),
+                        spacing="4",
                         align="center",
-                        spacing="3",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                        flex="1",
                     ),
-                    rx.foreach(
-                        State.traveler_ages,
-                        lambda age: rx.hstack(
-                            rx.text(f"Age: {age}"),
+                    rx.vstack(
+                        rx.heading("Budget", size="6", color="#1C2B3A"),
+                        rx.box(
+                            rx.select.root(
+                                rx.select.trigger(
+                                    width="100%",
+                                ),
+                                rx.select.content(
+                                    rx.select.group(
+                                        rx.foreach(
+                                            State.formatted_currencies,  # A list of strings or values that populate the choices in the dropdown menu.
+                                            lambda key: rx.select.item(key, value=key),
+                                        )
+                                    ),
+                                    style={
+                                        "background_color": "#1C2B3A",
+                                        "color": "#FFFFFF",
+                                    },
+                                ),
+                                value=current_currency,  # A state variable bound to the currently selected option
+                                on_change=State.handle_currency_option_change,  # What happens when the user selects a different option from the dropdown, manipulating the state variable.
+                            ),
+                            width="100%",
+                            style={
+                                "& button, & .rt-SelectTrigger": {
+                                    "background_color": "#1C2B3A !important",
+                                    "background": "#1C2B3A !important",
+                                    "color": "#FFFFFF !important",
+                                    "box_shadow": "none !important",
+                                }
+                            },
+                        ),
+                        rx.input(
+                            type="number",
+                            value=State.budget_amount,
+                            step=0.01,
+                            on_change=State.set_budget_amount,
+                            background_color="#1C2B3A",
+                            color="#F7F3EA",
+                            width="100%",
+                        ),
+                        rx.box(
+                            rx.select.root(
+                                rx.select.trigger(
+                                    width="100%",
+                                ),
+                                rx.select.content(
+                                    rx.select.group(
+                                        rx.foreach(
+                                            State.budget_scope_options.keys(),  # A list of strings or values that populate the choices in the dropdown menu.
+                                            lambda key: rx.select.item(key, value=key),
+                                        )
+                                    ),
+                                    style={
+                                        "background_color": "#1C2B3A",
+                                        "color": "#FFFFFF",
+                                    },
+                                ),
+                                value=State.current_budget_scope,  # A state variable bound to the currently selected option
+                                on_change=State.handle_budget_scope_change,  # What happens when the user selects a different option from the dropdown, manipulating the state variable.
+                            ),
+                            width="100%",
+                            style={
+                                "& button, & .rt-SelectTrigger": {
+                                    "background_color": "#1C2B3A !important",
+                                    "background": "#1C2B3A !important",
+                                    "color": "#FFFFFF !important",
+                                    "box_shadow": "none !important",
+                                }
+                            },
+                        ),
+                        spacing="4",
+                        align="center",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                        flex="1",
+                    ),
+                    rx.vstack(
+                        rx.heading("Style & Pace", size="6", color="#1C2B3A"),
+                        rx.vstack(
+                            rx.box(
+                                rx.select.root(
+                                    rx.select.trigger(
+                                        width="100%",
+                                    ),
+                                    rx.select.content(
+                                        rx.select.group(
+                                            rx.foreach(
+                                                State.travel_style_options.keys(),  # A list of strings or values that populate the choices in the dropdown menu.
+                                                lambda key: rx.select.item(
+                                                    key, value=key
+                                                ),
+                                            )
+                                        ),
+                                        style={
+                                            "background_color": "#1C2B3A",
+                                            "color": "#FFFFFF",
+                                        },
+                                    ),
+                                    value=State.current_travel_style,  # A state variable bound to the currently selected option
+                                    on_change=State.handle_travel_style_change,  # What happens when the user selects a different option from the dropdown, manipulating the state variable.
+                                ),
+                                style={
+                                    "& button, & .rt-SelectTrigger": {
+                                        "background_color": "#1C2B3A !important",
+                                        "background": "#1C2B3A !important",
+                                        "color": "#FFFFFF !important",
+                                        "box_shadow": "none !important",
+                                    }
+                                },
+                            ),
+                            rx.box(
+                                rx.select.root(
+                                    rx.select.trigger(
+                                        width="100%",
+                                    ),
+                                    rx.select.content(
+                                        rx.select.group(
+                                            rx.foreach(
+                                                State.pace_options.keys(),  # A list of strings or values that populate the choices in the dropdown menu.
+                                                lambda key: rx.select.item(
+                                                    key, value=key
+                                                ),
+                                            )
+                                        ),
+                                        style={
+                                            "background_color": "#1C2B3A",
+                                            "color": "#FFFFFF",
+                                        },
+                                    ),
+                                    value=State.current_pace_option,  # A state variable bound to the currently selected option
+                                    on_change=State.handle_pace_change,  # What happens when the user selects a different option from the dropdown, manipulating the state variable.
+                                ),
+                                style={
+                                    "& button, & .rt-SelectTrigger": {
+                                        "background_color": "#1C2B3A !important",
+                                        "background": "#1C2B3A !important",
+                                        "color": "#FFFFFF !important",
+                                        "box_shadow": "none !important",
+                                    }
+                                },
+                            ),
+                            spacing="4",
+                            align="stretch",
+                            justify="center",
+                            flex="1",
+                            width="100%",
+                        ),
+                        align="center",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                        flex="1",
+                    ),
+                    rx.vstack(
+                        rx.heading("Extras", size="6", color="#1C2B3A"),
+                        rx.text_area(
+                            placeholder="Any special occasions, accessibility needs, or preferences to add?",
+                            value=State.notes,
+                            on_change=State.set_notes,
+                            color="#F7F3EA",
+                            background_color="#1C2B3A",
+                        ),
+                        # Flex layout positions the checkbox box and its label side-by-side
+                        rx.hstack(
+                            rx.box(
+                                rx.checkbox(
+                                    checked=State.include_flights,  # Binds checking action to state
+                                    on_change=State.set_include_flights,  # Triggers state changes upon interaction
+                                ),
+                            ),
+                            rx.text(
+                                "Flights",
+                                color="#1C2B3A",
+                                font_weight="medium",
+                            ),
+                            align="center",
+                            spacing="2",
+                        ),
+                        rx.hstack(
+                            rx.box(
+                                rx.checkbox(
+                                    checked=State.include_hotels,
+                                    on_change=State.set_include_hotels,
+                                ),
+                            ),
+                            rx.text(
+                                "Hotels",
+                                color="#1C2B3A",
+                                font_weight="medium",
+                            ),
+                            align="center",
+                            spacing="2",
+                        ),
+                        spacing="4",
+                        align="center",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                        flex="1",
+                    ),
+                    spacing="4",
+                    width="100%",
+                    direction=rx.breakpoints(
+                        initial="column", sm="column", md="row", lg="row"
+                    ),
+                    align="stretch",
+                ),
+                rx.flex(
+                    rx.vstack(
+                        rx.heading("Interests", size="6", color="#1C2B3A"),
+                        rx.vstack(
+                            rx.grid(
+                                rx.foreach(
+                                    State.INTEREST_OPTIONS,
+                                    lambda interest: rx.hstack(
+                                        rx.checkbox(
+                                            interest[0],
+                                            is_checked=State.selected_interests.contains(
+                                                interest[1]
+                                            ),
+                                            on_change=lambda val: State.toggle_item(
+                                                interest[1], val
+                                            ),
+                                        ),
+                                        color="#1C2B3A",
+                                    ),
+                                ),
+                                columns="2",
+                                spacing="3",
+                                row_gap="3",
+                                column_gap="6",
+                                max_width="80%",
+                                margin="0 8% 0 12%",
+                                template_columns="1fr 1fr",
+                            ),
+                            justify="center",  #
+                            flex="1",
+                        ),
+                        flex="1",
+                        align="center",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                    ),
+                    rx.vstack(
+                        rx.heading(
+                            "Restrictions & Preferences",
+                            size="6",
+                            color="#1C2B3A",
+                        ),
+                        rx.grid(
+                            rx.foreach(
+                                State.HARD_CONSTRAINT_OPTIONS,
+                                lambda constraint: rx.hstack(
+                                    rx.checkbox(
+                                        constraint[0],
+                                        is_checked=State.hard_constraints.contains(
+                                            constraint[1]
+                                        ),
+                                        on_change=lambda val: State.toggle_hard_constraint(
+                                            constraint[1], val
+                                        ),
+                                    ),
+                                    color="#1C2B3A",
+                                ),
+                            ),
+                            rx.foreach(
+                                State.SOFT_PREFERENCE_OPTIONS,
+                                lambda constraint: rx.hstack(
+                                    rx.checkbox(
+                                        constraint[0],
+                                        is_checked=State.soft_preferences.contains(
+                                            constraint[1]
+                                        ),
+                                        on_change=lambda val: State.toggle_soft_preference(
+                                            constraint[1], val
+                                        ),
+                                    ),
+                                    color="#1C2B3A",
+                                ),
+                            ),
+                            columns="2",
+                            spacing="3",
+                            row_gap="3",
+                            column_gap="6",
+                            max_width="80%",
+                            margin="0 8% 0 18%",
+                            template_columns="1fr 1fr",
+                        ),
+                        flex="1",
+                        align="center",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
+                    ),
+                    direction=rx.breakpoints(
+                        initial="column", sm="column", md="row", lg="row"
+                    ),
+                    spacing="4",
+                    width="100%",
+                    align="stretch",
+                ),
+                rx.flex(
+                    rx.vstack(
+                        rx.heading("Traveler Ages", size="6", color="#1C2B3A"),
+                        rx.input(
+                            type="number",
+                            value=State.current_traveler_age,
+                            on_change=State.set_current_traveler_age,
+                            placeholder="Enter age",
+                            background_color="#1C2B3A",
+                            color="#F7F3EA",
+                        ),
+                        rx.hstack(
                             rx.icon_button(
                                 rx.icon(
-                                    "x",
-                                    color=rx.color("crimson", 11),
+                                    "plus",
+                                    color=rx.color("grass", 11),
                                     size=14,  # Slightly smaller icon size to fit neatly in row
                                     stroke_width=2.5,
                                 ),
-                                background_color=rx.color("crimson", 3),
+                                background_color=rx.color("grass", 3),
                                 radius="full",
                                 width="28px",
                                 height="28px",
-                                on_click=lambda: State.remove_traveler_age(age),
+                                on_click=State.add_traveler_age,
                                 _hover={
-                                    "background_color": rx.color("crimson", 4),
+                                    "background_color": rx.color("grass", 4),
                                     "cursor": "pointer",
                                 },
                             ),
                             align="center",
                             spacing="3",
                         ),
-                    ),
-                    spacing="4",
-                    width="100%",
-                    align="center",
-                ),
-                rx.divider(),
-                rx.heading("Trip Details", size="6"),
-                rx.vstack(
-                    rx.input(
-                        placeholder="City name",
-                        value=State.destination_city_name,
-                        on_change=State.set_destination_city_name,
-                    ),
-                    rx.text("Departure Date", size="3"),
-                    rx.input(
-                        type="date",
-                        value=State.departure_date_str,
-                        on_change=lambda val: State.set_departure_date(val),
-                        min=datetime.date.today().strftime("%Y-%m-%d"),
-                    ),
-                    rx.text("Arrival Date", size="3"),
-                    rx.input(
-                        type="date",
-                        value=State.arrival_date_str,
-                        on_change=lambda val: State.set_arrival_date(val),
-                        min=datetime.date.today().strftime("%Y-%m-%d"),
-                    ),
-                    rx.hstack(
-                        rx.icon_button(
-                            rx.icon(
-                                "plus",
-                                color=rx.color("grass", 11),
-                                size=14,  # Slightly smaller icon size to fit neatly in row
-                                stroke_width=2.5,
+                        rx.foreach(
+                            State.traveler_ages,
+                            lambda age: rx.hstack(
+                                rx.text(
+                                    f"Age: {age}",
+                                    color="#1C2B3A",
+                                ),
+                                rx.icon_button(
+                                    rx.icon(
+                                        "x",
+                                        color=rx.color("crimson", 11),
+                                        size=14,  # Slightly smaller icon size to fit neatly in row
+                                        stroke_width=2.5,
+                                    ),
+                                    background_color=rx.color("crimson", 3),
+                                    radius="full",
+                                    width="28px",
+                                    height="28px",
+                                    on_click=lambda: State.remove_traveler_age(age),
+                                    _hover={
+                                        "background_color": rx.color("crimson", 4),
+                                        "cursor": "pointer",
+                                    },
+                                ),
+                                align="center",
+                                spacing="3",
                             ),
-                            background_color=rx.color("grass", 3),
-                            radius="full",
-                            width="28px",
-                            height="28px",
-                            on_click=lambda: State.add_destination(),
-                            _hover={
-                                "background_color": rx.color("grass", 4),
-                                "cursor": "pointer",
-                            },
                         ),
-                        spacing="3",
                         align="center",
+                        spacing="4",
+                        flex="1",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
                     ),
-                    rx.foreach(
-                        State.destinations,
-                        lambda destination: rx.hstack(
-                            rx.text(
-                                f"{destination.destination_city_name}: {destination.departure_date} -> {destination.arrival_date}"
-                            ),
+                    rx.vstack(
+                        rx.heading(
+                            "Trip Details",
+                            size="6",
+                            color="#1C2B3A",
+                        ),
+                        rx.input(
+                            placeholder="City name",
+                            value=State.destination_city_name,
+                            on_change=State.set_destination_city_name,
+                            color="#F7F3EA",
+                            background_color="#1C2B3A",
+                        ),
+                        rx.text(
+                            "Departure Date",
+                            size="3",
+                            color="#1C2B3A",
+                        ),
+                        rx.input(
+                            type="date",
+                            value=State.departure_date_str,
+                            on_change=lambda val: State.set_departure_date(val),
+                            min=datetime.date.today().strftime("%Y-%m-%d"),
+                            color="#F7F3EA",
+                            background_color="#1C2B3A",
+                        ),
+                        rx.text(
+                            "Arrival Date",
+                            size="3",
+                            color="#1C2B3A",
+                        ),
+                        rx.input(
+                            type="date",
+                            value=State.arrival_date_str,
+                            on_change=lambda val: State.set_arrival_date(val),
+                            min=datetime.date.today().strftime("%Y-%m-%d"),
+                            color="#F7F3EA",
+                            background_color="#1C2B3A",
+                        ),
+                        rx.hstack(
                             rx.icon_button(
                                 rx.icon(
-                                    "x",
-                                    color=rx.color("crimson", 11),
+                                    "plus",
+                                    color=rx.color("grass", 11),
                                     size=14,  # Slightly smaller icon size to fit neatly in row
                                     stroke_width=2.5,
                                 ),
-                                background_color=rx.color("crimson", 3),
+                                background_color=rx.color("grass", 3),
                                 radius="full",
                                 width="28px",
                                 height="28px",
-                                on_click=lambda: State.remove_destination(destination),
+                                on_click=lambda: State.add_destination(),
                                 _hover={
-                                    "background_color": rx.color("crimson", 4),
+                                    "background_color": rx.color("grass", 4),
                                     "cursor": "pointer",
                                 },
                             ),
+                            spacing="3",
+                            align="center",
                         ),
+                        rx.foreach(
+                            State.destinations,
+                            lambda destination: rx.hstack(
+                                rx.text(
+                                    f"{destination.destination_city_name}: {destination.departure_date} -> {destination.arrival_date}",
+                                    color="#1C2B3A",
+                                ),
+                                rx.icon_button(
+                                    rx.icon(
+                                        "x",
+                                        color=rx.color("crimson", 11),
+                                        size=14,  # Slightly smaller icon size to fit neatly in row
+                                        stroke_width=2.5,
+                                    ),
+                                    background_color=rx.color("crimson", 3),
+                                    radius="full",
+                                    width="25px",
+                                    height="25px",
+                                    on_click=lambda: State.remove_destination(
+                                        destination
+                                    ),
+                                    _hover={
+                                        "background_color": rx.color("crimson", 4),
+                                        "cursor": "pointer",
+                                    },
+                                ),
+                            ),
+                        ),
+                        align="center",
+                        spacing="4",
+                        flex="1",
+                        background_color="#F7F3EA",
+                        border_radius="12px",
+                        padding="1.5em",
+                        box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",
                     ),
-                    align="center",
+                    direction=rx.breakpoints(
+                        initial="column", sm="column", md="row", lg="row"
+                    ),
                     spacing="4",
+                    width="100%",
+                    align="stretch",
                 ),
-                rx.divider(),
                 rx.button(
                     rx.cond(State.is_submitting, "Submitting...", "Generate Itinerary"),
                     on_click=State.submit_form,
                     disabled=State.is_submitting,
+                    background_color="#5FA393",
+                    color="#FFFFFF",
+                    padding="0.75em 2em",
+                    border_radius="8px",
+                    _hover={"background_color": "#4C8B7C"},
                 ),
                 rx.cond(
                     State.is_submitting
@@ -1116,35 +1391,42 @@ def index() -> rx.Component:
                     State.polling_error != "",
                     rx.text(State.polling_error, color=rx.color("crimson", 7)),
                 ),
-                
                 rx.cond(
                     State.itinerary_result.length() != 0,
                     rx.vstack(
-                        rx.heading("Your Itinerary", size="7"),
+                        rx.heading("Your Itinerary", size="7", color="#1C2B3A"),
                         rx.heading(
-                            f"Origin: {State.itinerary_result['origin']}", size="6"
+                            f"Origin: {State.itinerary_result['origin']}",
+                            size="6",
+                            color="#1C2B3A",
                         ),
                         rx.heading(
                             f"Total Cost: {State.itinerary_result['total_estimated_cost']} {State.itinerary_result['budget_currency']}",
                             size="6",
+                            color="#1C2B3A",
                         ),
                         rx.heading(
                             f"Note: {State.itinerary_result['cost_disclaimer']}",
                             size="3",
+                            color="#1C2B3A",
                         ),
                         rx.foreach(
                             State.itinerary_by_city,
                             lambda city_entry: rx.vstack(
-                                rx.heading(f"{city_entry[0]}", size="6"),
+                                rx.heading(
+                                    f"{city_entry[0]}", size="6", color="#1C2B3A"
+                                ),
                                 rx.foreach(
                                     city_entry[1],
                                     lambda day: rx.vstack(
-                                        rx.heading(f"{day.day_date}", size="4"),
+                                        rx.heading(
+                                            f"{day.day_date}", size="4", color="#1C2B3A"
+                                        ),
                                         rx.vstack(
                                             rx.heading(
                                                 f"Theme: {day.theme}",
                                                 font_style="italic",
-                                                color=rx.color("gray", 9),
+                                                color="#1C2B3A",
                                             ),
                                             rx.vstack(
                                                 rx.foreach(
@@ -1171,15 +1453,26 @@ def index() -> rx.Component:
                                                     ),
                                                 ),
                                                 padding_left="3em",
-                                            ),
+                                            ),  #
                                             padding_left="3em",
                                         ),
                                         padding_left="3em",
-                                    ),
+                                    ),  # inner v stack
                                 ),
+                                align="start",
+                                width="100%",
+                                background_color="#F7F3EA",
+                                border_radius="12px",
+                                padding="1.5em",
+                                box_shadow="0 2px 8px rgba(0, 0, 0, 0.15)",                                
                             ),
                         ),
-                    ),
+                        background_color="#1C2B3A",
+                        width="100%",
+                        align="center",
+                        spacing="4",
+                    ),  # outer v stack
+
                 ),
                 spacing="5",
                 padding="0.5em",  # inner space is twice the current element's font size
@@ -1188,6 +1481,8 @@ def index() -> rx.Component:
             ),
         ),
         width="100%",
+        min_height="100vh",
+        background_color="#1C2B3A",
     )
 
 
