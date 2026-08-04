@@ -5,10 +5,14 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
 from app.schemas.input_schema import solo_backpacker
+import json
+import os
 
-app = FastAPI() # the main entrypoint to use FastAPI
+app = FastAPI()  # the main entrypoint to use FastAPI
 
-jobs = {} # each key will be a unique job ID (a string); each value will be another dictionary holding that job's current status and result/error
+jobs = (
+    {}
+)  # each key will be a unique job ID (a string); each value will be another dictionary holding that job's current status and result/error
 
 # {
 #   "status": "pending", # "pending" | "running" | "complete" | "failed"
@@ -16,36 +20,80 @@ jobs = {} # each key will be a unique job ID (a string); each value will be anot
 #   "error": None        # will hold an error message if failed
 # }
 
+JOBS_FILE = "jobs_data.json"
+
 app.add_middleware(
-  CORSMiddleware,
-  allow_origins=["http://localhost:3000"], # list of frontend URLs allowed to make requests to this backend
-  allow_credentials=True, # wrhter cookies/auth headers are allowed to be sent cross-origin. 
-  allow_methods=["*"], # allows all HTTP methods from the allowed origins. POST is my only endpoint.
-  allow_headers=["*"], # allows any request headers, including Content-Type: application/json, which your frontend will need to send JSON bodies
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000"
+    ],  # list of frontend URLs allowed to make requests to this backend
+    allow_credentials=True,  # wrhter cookies/auth headers are allowed to be sent cross-origin.
+    allow_methods=[
+        "*"
+    ],  # allows all HTTP methods from the allowed origins. POST is my only endpoint.
+    allow_headers=[
+        "*"
+    ],  # allows any request headers, including Content-Type: application/json, which your frontend will need to send JSON bodies
 )
+
+
+# this is the file that reads from our JSON file
+def load_jobs():
+    global jobs
+    if os.path.exists(JOBS_FILE):
+        try:
+            with open(JOBS_FILE, "r") as f:
+                jobs = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            jobs = {}
+    else:
+        jobs = {}
+
+
+load_jobs()
+
 
 def run_itinerary_generation(job_id: str, preference: Preference):
     jobs[job_id]["status"] = "running"
+    save_jobs()
     try:
         result = generate_itinerary(preference)
         jobs[job_id]["status"] = "complete"
-        jobs[job_id]["result"] = result
+        jobs[job_id][
+            "result"
+        ] = result.model_dump()  # Pydantic object -> plain Python dictionary
     except Exception as e:
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
-      
+    finally:
+        save_jobs()
+        load_jobs()
+
+
+# This is the JSON file that we write to
+# If the file exists, we delete all old content. If the file does not exist, it creates a new file.
+def save_jobs():
+    with open(JOBS_FILE, "w") as f:
+        json.dump(jobs, f, default=str)
+
+
 @app.post("/generate-itinerary")
 def start_generation(preference: Preference, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
-    jobs[job_id] = { "status": "pending", "result": None, "error": None }
-    background_tasks.add_task(run_itinerary_generation, job_id, preference) # after the POST request has been made, add this as a background task
-    return { "job_id": job_id }
-  
+    jobs[job_id] = {"status": "pending", "result": None, "error": None}
+    save_jobs()
+    background_tasks.add_task(
+        run_itinerary_generation, job_id, preference
+    )  # after the POST request has been made, add this as a background task
+    return {"job_id": job_id}
+
+
 @app.get("/generate-itinerary/{job_id}")
 def get_job_status(job_id: str):
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs[job_id]
+
 
 if __name__ == "__main__":
     test_job_id = "test-123"
@@ -53,3 +101,10 @@ if __name__ == "__main__":
     jobs[test_job_id] = {"status": "pending", "result": None, "error": None}
     run_itinerary_generation(test_job_id, solo_backpacker)
     print(jobs[test_job_id])
+
+# The reason why we wrote to a JSON file is because every time the server would have to start,
+# any variables (stored in memory) would be wiped
+
+# Every time jobs changes, save_jobs() writes the current state of that dictionary out of a real file (jobs_data.json) on your disk.
+# When your server restarts, load_jobs() reads that file back in, restoring whatever jobs existed before the restart - so a job you
+# were checking on doesn't just vanish because you happened to save an related code file at the wrong moment

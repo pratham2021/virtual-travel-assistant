@@ -2,149 +2,260 @@
 import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from app.schemas.input_schema import Preference, couple_luxury, family_of_four, flights_test, hotel_test, solo_backpacker, tight_budget_test, multi_country_test, BudgetScope, CityStop, Interest, Pace, TravelStyle, TravelerType
+from app.schemas.input_schema import (
+    Preference,
+    couple_luxury,
+    family_of_four,
+    flights_test,
+    hotel_test,
+    solo_backpacker,
+    tight_budget_test,
+    multi_country_test,
+    BudgetScope,
+    CityStop,
+    Interest,
+    Pace,
+    TravelStyle,
+    TravelerType,
+)
 from app.schemas.output_schema import Itinerary
 from app.prompts import SYSTEM_PROMPT
-from app.clients.places_client import get_candidate_venues, format_hotels, format_hotels_for_prompt, format_venues_for_prompt, search_hotels
-from app.clients.flights_client import CABIN_CLASS_MAP, search_flights, format_flights_for_prompt
+from app.clients.places_client import (
+    get_candidate_venues,
+    format_hotels,
+    format_hotels_for_prompt,
+    format_venues_for_prompt,
+    search_hotels,
+)
+from app.clients.flights_client import (
+    CABIN_CLASS_MAP,
+    search_flights,
+    format_flights_for_prompt,
+)
 from app.clients.airport_codes import get_airport_code
+from concurrent.futures import ThreadPoolExecutor
 
-load_dotenv() # Load variables from the .env file into the environment
+load_dotenv()  # Load variables from the .env file into the environment
 
 secret = os.getenv("ANTHROPIC_API_KEY")
 
 client = Anthropic(api_key=secret)
 
+
 def generate_itinerary(preference: Preference) -> Itinerary:
     max_attempts = 3
     retry_feedback = ""
-    
+
     for attempt in range(max_attempts):
-        itinerary = _generate_itinerary_attempt(preference, retry_feedback=retry_feedback)
+        itinerary = _generate_itinerary_attempt(
+            preference, retry_feedback=retry_feedback
+        )
         compliant, message = check_budget_compliance(itinerary, preference)
-        print(f"Attempt {attempt + 1}: compliant={compliant}, total=${itinerary.total_estimated_cost}, message='{message}'")
+        print(
+            f"Attempt {attempt + 1}: compliant={compliant}, total=${itinerary.total_estimated_cost}, message='{message}'"
+        )
         if compliant:
             return itinerary
         retry_feedback = message
-    
-    print(f"Warning: itinerary still not budget-compliant after {max_attempts} attempts.")
+
+    print(
+        f"Warning: itinerary still not budget-compliant after {max_attempts} attempts."
+    )
     return itinerary
 
-def _generate_itinerary_attempt(preference: Preference, retry_feedback: str = "") -> Itinerary:
-    preference_json_string = preference.model_dump_json() # serialize the Preference object into a JSON-encoded string
-    
-    candidate_venues = get_candidate_venues(preference) # get candidate venues for each interest in the preference's interests list
-    formatted_venues = format_venues_for_prompt(candidate_venues) # format those candidate venues into a presentable string
-    
+
+def _generate_itinerary_attempt(
+    preference: Preference, retry_feedback: str = ""
+) -> Itinerary:
+    preference_json_string = (
+        preference.model_dump_json()
+    )  # serialize the Preference object into a JSON-encoded string
+
+    candidate_venues = get_candidate_venues(
+        preference
+    )  # get candidate venues for each interest in the preference's interests list
+    formatted_venues = format_venues_for_prompt(
+        candidate_venues
+    )  # format those candidate venues into a presentable string
+
     user_message = (
         f"Traveler preferences:\n{preference_json_string}\n\n"
         f"Available real venues (use ONLY these, do not invent alternatives):\n{formatted_venues}"
     )
-    
+
     candidate_hotels = {}
-    
+
     if preference.include_hotels:
-        for stop in preference.destinations:
-            raw_hotels = search_hotels(stop.city)
-            formatted_hotels = format_hotels(raw_hotels, stop.city, stop.arrival_date, stop.departure_date)
-            candidate_hotels[stop.city] = formatted_hotels
-        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {}
+
+            for stop in preference.destinations:
+                future = executor.submit(search_hotels, stop.city)
+                futures[future] = stop
+
+            for future in futures:
+                stop = futures[future]
+                raw_hotels = future.result()
+                formatted_hotels = format_hotels(
+                    raw_hotels, stop.city, stop.arrival_date, stop.departure_date
+                )
+                candidate_hotels[stop.city] = formatted_hotels
+
         formatted_hotels_text = format_hotels_for_prompt(candidate_hotels)
-        user_message += f"\n\nAvailable real hotels (use ONLY these, do not invent alternatives):\n{formatted_hotels_text}"    
-    
+        user_message += f"\n\nAvailable real hotels (use ONLY these, do not invent alternatives):\n{formatted_hotels_text}"
+
     if preference.include_flights:
-        city_sequence = [preference.origin] + [stop.city for stop in preference.destinations]
+
+        city_sequence = [preference.origin] + [stop.city for stop in preference.destinations] + [preference.origin]
         
+        unique_cities = list(set(city_sequence))
         airport_codes = {}
-        for city in city_sequence:
-            if city not in airport_codes:
-                airport_codes[city] = get_airport_code(city)
-                
-        candidate_flights = {}
-    
+
+        # Parallelize airport code fetch
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {}
+            for city in unique_cities:
+                future = executor.submit(get_airport_code, city)
+                futures[future] = city
+
+            for future in futures:
+                city = futures[future]
+                airport_codes[city] = future.result()
+
+        # Prepare each leg's search parameters
+        leg_params = []
+
         for i in range(len(city_sequence) - 1):
             origin_city = city_sequence[i]
             destination_city = city_sequence[i + 1]
-            
             origin_code = airport_codes[origin_city]
             destination_code = airport_codes[destination_city]
-            
+
             if origin_code is None or destination_code is None:
                 continue
-            
-            departure_date = preference.destinations[i].arrival_date if i == 0 else preference.destinations[i - 1].departure_date
-            
-            flights = search_flights(
+
+            departure_date = (
+                preference.destinations[i].arrival_date
+                if i == 0
+                else preference.destinations[i - 1].departure_date
+            )
+            leg_params.append(
+                (
+                    origin_city,
+                    destination_city,
+                    origin_code,
+                    destination_code,
+                    departure_date,
+                )
+            )
+
+        # Parallelizing searching flights for every leg
+        candidate_flights = {}
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {}
+
+            for (
+                origin_city,
+                destination_city,
                 origin_code,
                 destination_code,
                 departure_date,
-                preference.traveler_ages,
-                preference.group_size,
-                CABIN_CLASS_MAP[preference.travel_style]
-            )
-            
-            leg_label = f"{origin_city} to {destination_city}"
-            candidate_flights[leg_label] = flights
-        
+            ) in leg_params:
+                future = executor.submit(
+                    search_flights,
+                    origin_code,
+                    destination_code,
+                    departure_date,
+                    preference.traveler_ages,
+                    preference.group_size,
+                    CABIN_CLASS_MAP[preference.travel_style],
+                )
+                futures[future] = f"{origin_city} to {destination_city}"
+
+            for future in futures:
+                leg_label = futures[future]
+                candidate_flights[leg_label] = future.result()
+
         formatted_flights_text = format_flights_for_prompt(candidate_flights)
         user_message += f"\n\nAvailable real flights (use ONLY these, do not invent alternatives):\n{formatted_flights_text}"
 
     if retry_feedback:
         user_message += f"\n\nIMPORTANT: {retry_feedback}"
-    
+
     # passing our json string off to the model and returns the accumulated message object returned from the stream after it has been read to completion
-    with client.messages.stream(model="claude-sonnet-5", max_tokens=40000, system=SYSTEM_PROMPT, messages=[{"role": "user", "content": user_message}]) as stream:
+   
+    with client.messages.stream(
+        model="claude-sonnet-5",
+        max_tokens=40000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "medium"},
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_message}],
+    ) as stream:
         response = stream.get_final_message()
-    
-    # Clean raw JSON output string 
-    text_block = next((block.text for block in response.content if block.type == 'text'), "")
+
+    # Clean raw JSON output string
+    text_block = next(
+        (block.text for block in response.content if block.type == "text"), ""
+    )
     text_block = text_block.strip()
     if text_block.startswith("```"):
         position = text_block.find("\n")
-        text_block = text_block[position+1:]
+        text_block = text_block[position + 1 :]
     if text_block.endswith("```"):
         text_block = text_block[:-3]
     text_block = text_block.strip()
-    return Itinerary.model_validate_json(text_block) # parses a JSON string or bytes object, validates the data against your model, and returns a populated instance
+    return Itinerary.model_validate_json(
+        text_block
+    )  # parses a JSON string or bytes object, validates the data against your model, and returns a populated instance
 
-def check_budget_compliance(itinerary: Itinerary, preference: Preference) -> tuple[bool, str]:
+
+def check_budget_compliance(
+    itinerary: Itinerary, preference: Preference
+) -> tuple[bool, str]:
     messages = []
     if preference.budget_scope == BudgetScope.TOTAL_TRIP:
         if itinerary.total_estimated_cost > preference.budget_amount:
-            messages.append(f"Total cost of itinerary exceeds budget of preference by ${itinerary.total_estimated_cost - preference.budget_amount}")
+            messages.append(
+                f"Total cost of itinerary exceeds budget of preference by ${itinerary.total_estimated_cost - preference.budget_amount}"
+            )
     elif preference.budget_scope == BudgetScope.PER_DAY:
         day_no = 1
         for day in itinerary.days:
             daily_activity_costs = 0
             for activity in day.activities:
                 daily_activity_costs += activity.estimated_cost
-            
+
             if daily_activity_costs > preference.budget_amount:
-                messages.append(f"Day {day_no} exceeded the budget amount of ${preference.budget_amount} by ${daily_activity_costs - preference.budget_amount}")
+                messages.append(
+                    f"Day {day_no} exceeded the budget amount of ${preference.budget_amount} by ${daily_activity_costs - preference.budget_amount}"
+                )
             day_no += 1
     return (messages == [], "; ".join(messages))
+
 
 if __name__ == "__main__":
     # solo_backpacker_itinerary = generate_itinerary(solo_backpacker)
     # print(solo_backpacker_itinerary)
-    
+
     # origin='Austin' destination='Bangkok' start_date=datetime.date(2026, 7, 26) end_date=datetime.date(2026, 7, 30) total_estimated_cost=227 budget_currency='USD' cost_disclaimer='All costs are approximate estimates based on general knowledge of Bangkok pricing for backpacker-style travel; actual prices may vary with exchange rates, season, and venue changes.' days=[Day(day_date=datetime.date(2026, 7, 26), theme='Arrival and first taste of Bangkok nightlife', activities=[Activity(start_time=datetime.time(14, 0), duration_minutes=60, name='Hostel check-in and freshen up', category=<Interest.RELAXATION: 'relaxation'>, description='Settle into your accommodation and rest briefly after the long flight from Austin.', estimated_cost=0), Activity(start_time=datetime.time(15, 30), duration_minutes=150, name='Chatuchak Weekend Market', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description="Wander the maze of stalls at one of the world's largest weekend markets, sampling street snacks and browsing local goods.", estimated_cost=15), Activity(start_time=datetime.time(18, 0), duration_minutes=90, name='Suraya Bangkok Hostel & Kitchen', category=<Interest.FOOD: 'food'>, description='Enjoy a casual, well-reviewed Thai dinner in the Phra Nakhon area to kick off the trip.', estimated_cost=8), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name='Bangkok Nightlife', category=<Interest.NIGHTLIFE: 'nightlife'>, description="Ease into Bangkok's nightlife scene on Sukhumvit Soi 11 with drinks and people-watching.", estimated_cost=15)]), Day(day_date=datetime.date(2026, 7, 27), theme='Old City history, food, and rooftop views', activities=[Activity(start_time=datetime.time(8, 0), duration_minutes=60, name='Thipsamai Padthai Pratoopee', category=<Interest.FOOD: 'food'>, description='Start the day with legendary pad thai at this iconic Bangkok institution.', estimated_cost=6), Activity(start_time=datetime.time(9, 30), duration_minutes=90, name='Pak Khlong Talat', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description="Stroll through Bangkok's famous flower and produce market for a burst of color and local life.", estimated_cost=0), Activity(start_time=datetime.time(11, 0), duration_minutes=90, name="Walk through Rattanakosin Island's historic streets", category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Explore the walkable old city on foot, taking in temple spires and canal-side architecture along the way.', estimated_cost=0), Activity(start_time=datetime.time(12, 30), duration_minutes=90, name='RONGROS', category=<Interest.FOOD: 'food'>, description='Enjoy a riverside Thai lunch with views over the Chao Phraya at this highly rated restaurant.', estimated_cost=15), Activity(start_time=datetime.time(14, 30), duration_minutes=90, name='Sampheng Market', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description="Dive into Chinatown's bustling wholesale market alleys packed with textiles, trinkets, and snacks.", estimated_cost=0), Activity(start_time=datetime.time(16, 30), duration_minutes=60, name='The Family', category=<Interest.FOOD: 'food'>, description='Refuel with a late-afternoon Thai meal at this highly rated neighborhood spot.', estimated_cost=8), Activity(start_time=datetime.time(19, 0), duration_minutes=150, name='Octave Rooftop Lounge & Bar', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Take in panoramic city views and cocktails at this popular Sukhumvit rooftop bar.', estimated_cost=20)]), Day(day_date=datetime.date(2026, 7, 28), theme='Khao San flavors, floating markets, and skyline drinks', activities=[Activity(start_time=datetime.time(8, 30), duration_minutes=60, name='Olive Kitchen - Khaosan', category=<Interest.FOOD: 'food'>, description='Grab a relaxed breakfast near the famous backpacker strip before heading out for the day.', estimated_cost=7), Activity(start_time=datetime.time(10, 0), duration_minutes=150, name='Khlong Bang Luang Floating Market', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Explore a quieter, more authentic floating market by longtail boat, away from the biggest crowds.', estimated_cost=10), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='ร้านขจร | Kajohn Authentic Southern Thai Cuisine', category=<Interest.FOOD: 'food'>, description='Sample bold Southern Thai flavors at this well-reviewed local favorite.', estimated_cost=10), Activity(start_time=datetime.time(15, 0), duration_minutes=120, name='Pratunam Market', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Browse a sprawling local market known for affordable clothing and everyday Thai shopping culture.', estimated_cost=10), Activity(start_time=datetime.time(17, 30), duration_minutes=90, name='รสกรุง - Ros Krung Esarn Thai Cafe', category=<Interest.FOOD: 'food'>, description='Try Isaan-style Thai dishes at this highly rated casual cafe before heading out for the evening.', estimated_cost=8), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name='Sky Bar', category=<Interest.NIGHTLIFE: 'nightlife'>, description="Experience one of Bangkok's most iconic open-air rooftop bars atop State Tower.", estimated_cost=30)]), Day(day_date=datetime.date(2026, 7, 29), theme='Riverside relaxation and Charoen Krung nightlife', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=90, name='The Island Bangkok – Top Rated Thai Restaurant & Bar', category=<Interest.FOOD: 'food'>, description='Enjoy a leisurely brunch at this highly rated Thai restaurant near Khao San.', estimated_cost=10), Activity(start_time=datetime.time(12, 0), duration_minutes=90, name='Explore Banglamphu neighborhood on foot', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description="Wander quieter backstreets away from Khao San's main strip to soak in local Bangkok life.", estimated_cost=0), Activity(start_time=datetime.time(14, 0), duration_minutes=90, name='Rest at hostel during peak afternoon heat', category=<Interest.RELAXATION: 'relaxation'>, description='Take a midday break to recharge before an active evening out.', estimated_cost=0), Activity(start_time=datetime.time(16, 0), duration_minutes=180, name='Asiatique The Riverfront', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Browse riverside shops and stalls and watch the sunset over the Chao Phraya at this open-air complex.', estimated_cost=15), Activity(start_time=datetime.time(19, 30), duration_minutes=150, name='BKK Social Club', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Cap off the night at this highly rated, stylish cocktail bar on Charoen Krung.', estimated_cost=25)]), Day(day_date=datetime.date(2026, 7, 30), theme='Final morning and departure', activities=[Activity(start_time=datetime.time(8, 30), duration_minutes=60, name='Breakfast at a local street food stall near Khao San', category=<Interest.FOOD: 'food'>, description='Enjoy one last casual Thai breakfast from a street vendor before checking out.', estimated_cost=5), Activity(start_time=datetime.time(10, 0), duration_minutes=90, name='Last-minute souvenir shopping in Banglamphu', category=<Interest.SHOPPING: 'shopping'>, description='Pick up final souvenirs and gifts in the walkable streets around the old city.', estimated_cost=10), Activity(start_time=datetime.time(12, 0), duration_minutes=60, name='Check out and head to the airport', category=<Interest.RELAXATION: 'relaxation'>, description='Wrap up the trip with a relaxed transfer to the airport for the flight home.', estimated_cost=0)])]
-    
+
     # family_of_four_itinerary = generate_itinerary(family_of_four)
     # print(family_of_four_itinerary)
-    
+
     # origin='Austin' destination='Orlando' start_date=datetime.date(2026, 8, 1) end_date=datetime.date(2026, 8, 11) total_estimated_cost=3260 budget_currency='USD' cost_disclaimer='Cost estimates are approximate, based on general knowledge of Orlando pricing for a family of four in mid-2026, and may vary with seasonality, ticket promotions, and restaurant choices.' days=[Day(day_date=datetime.date(2026, 8, 1), theme='Arrival & Downtown Orlando Relaxation', activities=[Activity(start_time=datetime.time(15, 30), duration_minutes=90, name='Lake Eola Park', category=<Interest.NATURE: 'nature'>, description='Unwind after the flight with a relaxing swan-boat ride and stroll around the lake.', estimated_cost=20), Activity(start_time=datetime.time(17, 30), duration_minutes=90, name='Dinner near Lake Eola', category=<Interest.FOOD: 'food'>, description='Casual family dinner at a restaurant close to downtown to ease into the trip.', estimated_cost=80), Activity(start_time=datetime.time(19, 30), duration_minutes=90, name='Relax and settle in at accommodation', category=<Interest.RELAXATION: 'relaxation'>, description='Unpack and rest after travel to prepare for the week ahead.', estimated_cost=0)]), Day(day_date=datetime.date(2026, 8, 2), theme='Springs & Nature Exploration', activities=[Activity(start_time=datetime.time(7, 30), duration_minutes=60, name='Breakfast at accommodation', category=<Interest.FOOD: 'food'>, description='Early start with a family breakfast before heading out for a nature-filled day.', estimated_cost=40), Activity(start_time=datetime.time(8, 30), duration_minutes=240, name='Wekiwa Springs State Park', category=<Interest.NATURE: 'nature'>, description='Hike scenic trails, swim in the crystal-clear spring, and paddle along the Wekiwa River.', estimated_cost=90), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='Picnic lunch at the park pavilion', category=<Interest.FOOD: 'food'>, description='Enjoy a packed lunch surrounded by nature at Wekiwa Springs.', estimated_cost=50), Activity(start_time=datetime.time(18, 30), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Relaxed evening meal after a full day outdoors.', estimated_cost=80)]), Day(day_date=datetime.date(2026, 8, 3), theme='Adventure at Universal Islands of Adventure', activities=[Activity(start_time=datetime.time(8, 0), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Fuel up early for a big theme park day.', estimated_cost=30), Activity(start_time=datetime.time(9, 0), duration_minutes=300, name='Universal Islands of Adventure', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Full-day family visit to explore themed lands and attractions across the park.', estimated_cost=600), Activity(start_time=datetime.time(11, 0), duration_minutes=90, name='Seuss Landing', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Wander through whimsical Dr. Seuss-themed rides and colorful scenery, included with park admission.', estimated_cost=0), Activity(start_time=datetime.time(14, 0), duration_minutes=60, name='Jurassic Park River Adventure™', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Take on a thrilling water ride through prehistoric jungle scenery, included with park admission.', estimated_cost=0), Activity(start_time=datetime.time(19, 0), duration_minutes=90, name='Dinner near the park', category=<Interest.FOOD: 'food'>, description='Wind down with dinner after an exciting day of rides.', estimated_cost=90)]), Day(day_date=datetime.date(2026, 8, 4), theme='Marine Life & Family Fun at SeaWorld', activities=[Activity(start_time=datetime.time(8, 0), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Quick breakfast before heading to SeaWorld.', estimated_cost=30), Activity(start_time=datetime.time(9, 0), duration_minutes=300, name='SeaWorld Orlando', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Spend the day enjoying marine animal shows, exhibits, and family-friendly rides.', estimated_cost=400), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='Lunch inside the park', category=<Interest.FOOD: 'food'>, description="Midday meal at one of SeaWorld's family-style eateries.", estimated_cost=60), Activity(start_time=datetime.time(19, 0), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Relaxed dinner after a full day of marine adventures.', estimated_cost=80)]), Day(day_date=datetime.date(2026, 8, 5), theme='Peaceful Nature Retreat at Lake Louisa', activities=[Activity(start_time=datetime.time(7, 30), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Early breakfast before a slower-paced nature day.', estimated_cost=30), Activity(start_time=datetime.time(8, 30), duration_minutes=240, name='Lake Louisa State Park', category=<Interest.NATURE: 'nature'>, description='Enjoy hiking trails, lake swimming, and open natural scenery at a relaxed pace.', estimated_cost=40), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='Picnic lunch at the park', category=<Interest.FOOD: 'food'>, description="Simple family picnic amid the park's quiet surroundings.", estimated_cost=50), Activity(start_time=datetime.time(18, 0), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Evening meal after a calm day in nature.', estimated_cost=80)]), Day(day_date=datetime.date(2026, 8, 6), theme='Thrills and Wonders on International Drive', activities=[Activity(start_time=datetime.time(8, 0), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Family breakfast before a day of attractions on International Drive.', estimated_cost=30), Activity(start_time=datetime.time(9, 30), duration_minutes=180, name='Fun Spot America', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Enjoy go-karts, rides, and arcade fun suited for the whole family.', estimated_cost=200), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='Lunch on International Drive', category=<Interest.FOOD: 'food'>, description='Casual lunch stop between attractions.', estimated_cost=60), Activity(start_time=datetime.time(15, 0), duration_minutes=150, name='WonderWorks Orlando', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Explore interactive exhibits and hands-on science fun in an upside-down building.', estimated_cost=150), Activity(start_time=datetime.time(19, 0), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Relaxed dinner to end an activity-packed day.', estimated_cost=90)]), Day(day_date=datetime.date(2026, 8, 7), theme='Gardens & Wildlife Preserves', activities=[Activity(start_time=datetime.time(7, 30), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Early breakfast before a nature-focused morning.', estimated_cost=30), Activity(start_time=datetime.time(8, 30), duration_minutes=150, name='Tibet-Butler Nature Preserve', category=<Interest.NATURE: 'nature'>, description='Take a guided nature walk to spot local wildlife and native Florida habitats.', estimated_cost=0), Activity(start_time=datetime.time(12, 0), duration_minutes=60, name='Lunch', category=<Interest.FOOD: 'food'>, description='Midday meal before continuing the nature day.', estimated_cost=50), Activity(start_time=datetime.time(14, 30), duration_minutes=90, name='Kraft Azalea Garden', category=<Interest.NATURE: 'nature'>, description='Stroll among towering cypress trees and lakeside gardens.', estimated_cost=0), Activity(start_time=datetime.time(18, 30), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Evening meal after a peaceful day surrounded by greenery.', estimated_cost=80)]), Day(day_date=datetime.date(2026, 8, 8), theme='Quirky Fun & City Landmarks', activities=[Activity(start_time=datetime.time(7, 30), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Family breakfast before heading into the city.', estimated_cost=30), Activity(start_time=datetime.time(9, 0), duration_minutes=150, name="Ripley's Believe It or Not!", category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Explore quirky, oddity-filled exhibits that appeal to curious kids and adults alike.', estimated_cost=100), Activity(start_time=datetime.time(12, 0), duration_minutes=60, name='Lunch on International Drive', category=<Interest.FOOD: 'food'>, description='Casual midday meal near the attraction area.', estimated_cost=60), Activity(start_time=datetime.time(14, 30), duration_minutes=60, name='Lake Eola Pagoda', category=<Interest.FAMILY_ACTIVITIES: 'family_activities'>, description='Visit this iconic landmark for photos and a relaxed stroll around the lake.', estimated_cost=0), Activity(start_time=datetime.time(18, 30), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Evening meal to close out a fun-filled day.', estimated_cost=90)]), Day(day_date=datetime.date(2026, 8, 9), theme='Lakeside Parks & Quiet Nature', activities=[Activity(start_time=datetime.time(7, 30), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Relaxed breakfast before a low-key nature day.', estimated_cost=30), Activity(start_time=datetime.time(8, 30), duration_minutes=150, name='Cypress Grove Park', category=<Interest.NATURE: 'nature'>, description='Enjoy lakeside trails and open picnic areas in a tranquil setting.', estimated_cost=0), Activity(start_time=datetime.time(12, 0), duration_minutes=60, name='Lunch', category=<Interest.FOOD: 'food'>, description='Midday break before the second park visit.', estimated_cost=50), Activity(start_time=datetime.time(14, 30), duration_minutes=90, name='Blue Jacket Park', category=<Interest.NATURE: 'nature'>, description='Relax at the playground and walking trails with scenic lake views.', estimated_cost=0), Activity(start_time=datetime.time(18, 30), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Evening meal after a slow-paced nature day.', estimated_cost=80)]), Day(day_date=datetime.date(2026, 8, 10), theme='Leisure Day & Favorite Spots Revisited', activities=[Activity(start_time=datetime.time(8, 0), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Relaxed start to a low-key final full day.', estimated_cost=30), Activity(start_time=datetime.time(9, 0), duration_minutes=90, name='Lake Eola Park', category=<Interest.NATURE: 'nature'>, description='Revisit this favorite spot for a morning stroll and swan-boat ride.', estimated_cost=20), Activity(start_time=datetime.time(12, 30), duration_minutes=60, name='Lunch', category=<Interest.FOOD: 'food'>, description='Casual midday meal before winding down.', estimated_cost=60), Activity(start_time=datetime.time(15, 0), duration_minutes=120, name='Relax at accommodation / pool time', category=<Interest.RELAXATION: 'relaxation'>, description='Unstructured downtime for the family to rest before departure.', estimated_cost=0), Activity(start_time=datetime.time(18, 30), duration_minutes=90, name='Dinner', category=<Interest.FOOD: 'food'>, description='Family farewell dinner celebrating the trip.', estimated_cost=90)]), Day(day_date=datetime.date(2026, 8, 11), theme='Farewell Orlando', activities=[Activity(start_time=datetime.time(8, 0), duration_minutes=45, name='Breakfast', category=<Interest.FOOD: 'food'>, description='Light breakfast before checking out and heading toward the airport.', estimated_cost=30), Activity(start_time=datetime.time(9, 30), duration_minutes=60, name='Lake Eola Park', category=<Interest.NATURE: 'nature'>, description='One last relaxing walk around the park before departure.', estimated_cost=0), Activity(start_time=datetime.time(11, 30), duration_minutes=60, name='Lunch near the airport', category=<Interest.FOOD: 'food'>, description='Final family meal before the daytime flight home, avoiding any red-eye travel.', estimated_cost=50)])]
-    
+
     # couple_luxury_itinerary = generate_itinerary(couple_luxury)
     # print(couple_luxury_itinerary)
-    
+
     # origin='San Francisco' destination='Kyoto' start_date=datetime.date(2026, 8, 1) end_date=datetime.date(2026, 8, 8) total_estimated_cost=3320 budget_currency='USD' cost_disclaimer='Costs are estimated based on general knowledge of Kyoto pricing and may vary at time of booking; accommodations and flights are not included in these activity-based estimates.' days=[Day(day_date=datetime.date(2026, 8, 1), theme='Arrival in Gion – Culinary Welcome', activities=[Activity(start_time=datetime.time(15, 0), duration_minutes=90, name="Stroll through Gion's Historic Streets", category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Wander the lantern-lit lanes of Gion, taking in traditional machiya townhouses and teahouses.', estimated_cost=0), Activity(start_time=datetime.time(18, 0), duration_minutes=90, name='Kyoto Gyoza enen Gion Main Branch', category=<Interest.FOOD: 'food'>, description='Savor Kyoto-style gyoza at this highly-rated Gion eatery for a relaxed first dinner.', estimated_cost=70), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name='Hideout KICK Kyoto(Speakeasy Cocktail Bar)', category=<Interest.NIGHTLIFE: 'nightlife'>, description="Unwind with expertly crafted cocktails at this hidden speakeasy tucked above Gion's streets.", estimated_cost=150)]), Day(day_date=datetime.date(2026, 8, 2), theme='Higashiyama Heritage & Gion Nights', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=120, name="Guided Walk Through Higashiyama's Preserved Streets", category=<Interest.ARCHITECTURE: 'architecture'>, description='Explore the stone-paved lanes and centuries-old wooden facades of Higashiyama with a private guide.', estimated_cost=200), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='Leisurely Browsing Near Yasaka Shrine', category=<Interest.SHOPPING: 'shopping'>, description='Pop into small craft and tea shops surrounding the approach to Yasaka Shrine.', estimated_cost=0), Activity(start_time=datetime.time(18, 30), duration_minutes=120, name='Kyoto Wagyu Sukiyaki Shabushabu Tominojo Takumi Gion Shijo Store', category=<Interest.FOOD: 'food'>, description='Indulge in a luxurious wagyu sukiyaki and shabu-shabu dinner in the heart of Gion.', estimated_cost=260), Activity(start_time=datetime.time(21, 0), duration_minutes=120, name='MUSIC BAR universe -GION-', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Enjoy late-night drinks and curated music at this stylish Gion bar.', estimated_cost=140)]), Day(day_date=datetime.date(2026, 8, 3), theme='Nishiki Market & Nakagyo Nightlife', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=120, name='Explore Nishiki Market and Teramachi Shopping Arcade', category=<Interest.SHOPPING: 'shopping'>, description="Browse Kyoto's famed 'kitchen' and covered arcades filled with local delicacies and crafts.", estimated_cost=0), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='GYUKATSU Kyoto Katsugyu Teramachi Kyogoku', category=<Interest.FOOD: 'food'>, description='Try crispy fried Kyoto-style beef cutlets at this popular Nakagyo restaurant.', estimated_cost=90), Activity(start_time=datetime.time(15, 0), duration_minutes=90, name='Wander Pontocho Alley Along the Kamogawa River', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Take a relaxed walk along the narrow, atmospheric alley lined with traditional restaurants.', estimated_cost=0), Activity(start_time=datetime.time(20, 30), duration_minutes=120, name='THE PINK KYOTO', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Dance and mingle at this vibrant Nakagyo nightlife spot.', estimated_cost=160)]), Day(day_date=datetime.date(2026, 8, 4), theme='Wellness & Vegetarian Delights', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=90, name='Private Traditional Tea Ceremony Experience', category=<Interest.WELLNESS: 'wellness'>, description='Participate in an intimate tea ceremony to unwind and reflect in classic Kyoto style.', estimated_cost=250), Activity(start_time=datetime.time(12, 30), duration_minutes=90, name='VOG Kyoto - Vegetarian, Vegan, Gluten Free & Jain Restaurant', category=<Interest.FOOD: 'food'>, description='Enjoy a refined plant-based lunch accommodating a range of dietary preferences.', estimated_cost=100), Activity(start_time=datetime.time(15, 0), duration_minutes=90, name='Leisurely Walk Along the Kamo River Promenade', category=<Interest.NATURE: 'nature'>, description='Stroll along the riverside paths popular with locals for relaxation.', estimated_cost=0), Activity(start_time=datetime.time(20, 30), duration_minutes=150, name='Nightclub 【KITSUNE KYOTO】', category=<Interest.NIGHTLIFE: 'nightlife'>, description="Dance the night away at one of Kyoto's most stylish nightclubs.", estimated_cost=170)]), Day(day_date=datetime.date(2026, 8, 5), theme='Art, Boutiques & Late-Night Cocktails', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=120, name='Browse Boutique Shops and Art Galleries in Nakagyo', category=<Interest.ART: 'art'>, description="Discover small galleries and design boutiques tucked into Nakagyo's backstreets.", estimated_cost=0), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='The Wagyu Burger by PANGA | Kyoto halal restaurant', category=<Interest.FOOD: 'food'>, description='Bite into a gourmet halal wagyu burger at this acclaimed Nakagyo spot.', estimated_cost=100), Activity(start_time=datetime.time(15, 30), duration_minutes=90, name='Traditional Foot Bath and Spa Experience', category=<Interest.WELLNESS: 'wellness'>, description='Relax with a soothing foot bath and massage treatment at a local spa.', estimated_cost=220), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name="L'Escamoteur", category=<Interest.NIGHTLIFE: 'nightlife'>, description='Sip creative cocktails in an intimate, speakeasy-style setting.', estimated_cost=150)]), Day(day_date=datetime.date(2026, 8, 6), theme='Shimogyo Serenity & Nightlife Double Feature', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=120, name="Morning Stroll Through Shimogyo's Quiet Temple Lanes", category=<Interest.HISTORY: 'history'>, description='Wander past small neighborhood temples and shrines away from the crowds.', estimated_cost=0), Activity(start_time=datetime.time(13, 0), duration_minutes=90, name='KAWARAMACHI BEEF-TEI', category=<Interest.FOOD: 'food'>, description='Feast on premium Kyoto beef at this celebrated Nakagyo restaurant.', estimated_cost=180), Activity(start_time=datetime.time(16, 0), duration_minutes=90, name='Hotel Onsen and Spa Relaxation', category=<Interest.RELAXATION: 'relaxation'>, description='Recharge with a private soak and spa treatment before an evening out.', estimated_cost=300), Activity(start_time=datetime.time(20, 0), duration_minutes=100, name='WORLD KYOTO', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Start the night with music and drinks at this popular Shimogyo venue.', estimated_cost=130), Activity(start_time=datetime.time(22, 0), duration_minutes=100, name='Back Alley Kyoto', category=<Interest.NIGHTLIFE: 'nightlife'>, description='Continue the evening one floor up in the same building at this cozy late-night bar.', estimated_cost=120)]), Day(day_date=datetime.date(2026, 8, 7), theme='Crafts, Halal Cuisine & Farewell Cocktails', activities=[Activity(start_time=datetime.time(10, 0), duration_minutes=120, name='Visit Traditional Crafts Workshops in Nakagyo', category=<Interest.LOCAL_CULTURE: 'local_culture'>, description='Watch artisans at work producing traditional Kyoto crafts.', estimated_cost=80), Activity(start_time=datetime.time(13, 0), duration_minutes=60, name='Halal Ramen Honolu Premier Kyoto Nishiki', category=<Interest.FOOD: 'food'>, description='Enjoy a bowl of rich halal-certified ramen near Nishiki Market.', estimated_cost=70), Activity(start_time=datetime.time(15, 30), duration_minutes=90, name='Relaxing Walk Through Nishiki Tenmangu Area Gardens', category=<Interest.NATURE: 'nature'>, description='Take in peaceful greenery just steps from the bustling market district.', estimated_cost=0), Activity(start_time=datetime.time(20, 0), duration_minutes=120, name='Bar TRENCH Kyoto', category=<Interest.NIGHTLIFE: 'nightlife'>, description='End the evening with expertly mixed cocktails at this intimate Shimogyo bar.', estimated_cost=140)]), Day(day_date=datetime.date(2026, 8, 8), theme='Kamigyo Farewell', activities=[Activity(start_time=datetime.time(9, 30), duration_minutes=90, name='Morning Walk Near the Kyoto Imperial Palace in Kamigyo', category=<Interest.HISTORY: 'history'>, description='Take a final peaceful walk through the historic streets surrounding the Imperial Palace grounds.', estimated_cost=0), Activity(start_time=datetime.time(12, 0), duration_minutes=90, name='New Delhi Indian Restaurant(original)', category=<Interest.FOOD: 'food'>, description='Enjoy a farewell lunch of flavorful Indian cuisine before departure.', estimated_cost=90), Activity(start_time=datetime.time(14, 0), duration_minutes=60, name='Last-Minute Souvenir Shopping', category=<Interest.SHOPPING: 'shopping'>, description="Pick up final gifts and mementos from Kyoto's specialty shops.", estimated_cost=150), Activity(start_time=datetime.time(16, 0), duration_minutes=60, name='Relax at Your Accommodation Before Departure', category=<Interest.RELAXATION: 'relaxation'>, description='Unwind in comfort before heading to the airport for your flight home.', estimated_cost=0)])]
-    
+
     # multi_country_test_itinerary = generate_itinerary(multi_country_test)
     # print(multi_country_test_itinerary)
-    
+
     # hotel_test_itinerary = generate_itinerary(hotel_test)
     # print(hotel_test_itinerary)
-    
+
     flights_test_itinerary = generate_itinerary(flights_test)
     print(flights_test_itinerary)

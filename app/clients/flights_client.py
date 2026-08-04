@@ -5,6 +5,7 @@ from datetime import date, datetime
 from app.schemas.input_schema import TravelStyle
 from app.clients.places_client import search_places, get_city_coordinates
 from app.clients.airport_codes import get_airport_code
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
